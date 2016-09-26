@@ -114,6 +114,14 @@ void setup()
   // start up the i2c interface
   Wire.begin();
 
+  //The Wire library enables the internal pullup resistors for SDA and SCL.
+  //You can turn them off after Wire.begin()
+  // do not need this with patched Wire library
+  //digitalWrite( SDA, LOW);
+  //digitalWrite( SCL, LOW);
+  digitalWrite( SDA, HIGH);
+  digitalWrite( SCL, HIGH);
+
   // set the frequency 
 #define I2C_CLOCK 50000
 
