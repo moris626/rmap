@@ -1,11 +1,11 @@
 /**********************************************************************
-Copyright (C) 2016  Paolo Paruno <p.patruno@iperbole.bologna.it>
+Copyright (C) 2017  Marco Baldinetti <m.baldinetti@digiteco.it>
 authors:
-Paolo Paruno <p.patruno@iperbole.bologna.it>
+Marco Baldinetti <m.baldinetti@digiteco.it>
 
 This program is free software; you can redistribute it and/or
 modify it under the terms of the GNU General Public License as
-published by the Free Software Foundation; either version 2 of 
+published by the Free Software Foundation; either version 2 of
 the License, or (at your option) any later version.
 
 This program is distributed in the hope that it will be useful,
@@ -17,832 +17,743 @@ You should have received a copy of the GNU General Public License
 along with this program.  If not, see <http://www.gnu.org/licenses/>.
 **********************************************************************/
 
-/*********************************************************************
- *
- * This program implements temperature and humidity sensors 
- * elaboration exported to i2c interface.
- * 
-**********************************************************************/
-/*
-buffer scrivibili da i2c
-viene scritto buffer1 e buffer2
-viene letto buffer2
-i puntatori a buffer1 e buffer2 vengono scambiati in una operazione atomica all'inizio del main loop
+/**********************************************************************
+ * DEBUG
+ *********************************************************************/
+/*! \file i2c-th2.h
+    \brief i2c-th include file
+
+    i2c-th include file
 */
+#include <debug_config.h>
 
-/*
-buffer leggibili da i2c
-le elaborazioni scrivono sempre su buffer1
-viene sempre letto buffer2
-i puntatori a buffer1 e buffer2 vengono scambiati in una operazione atomica al comando stop
+/*!
+  \def SERIAL_TRACE_LEVEL
+  Debug level for sketch and library.
 */
+#define SERIAL_TRACE_LEVEL I2C_TH_SERIAL_TRACE_LEVEL
 
-#define VERSION 02             //Software version for cross checking
-//#define HUGE 4294967296
-//#define SHUGE 2147483647
-
-#include <limits.h>
-#include <SensorDriver.h>
-#include <avr/wdt.h>
-#include "Wire.h"
-#include "registers-th.h"      //Register definitions
-#include "config.h"
-#include "LongIntBuffer.h"
-#include "FloatBuffer.h"
-
-#include "EEPROMAnything.h"
-
-#define REG_MAP_SIZE            sizeof(I2C_REGISTERS)                //size of register map
-#define REG_TH_SIZE           sizeof(values_t)                  //size of register map for th
-#define REG_WRITABLE_MAP_SIZE   sizeof(I2C_WRITABLE_REGISTERS)       //size of register map
-
-#define MAX_SENT_BYTES     0x0F   //maximum amount of data that I could receive from a master device (register, plus 15 byte)
-
-char confver[9] = CONFVER; // version of configuration saved on eeprom
-
-#define SENSORS_LEN           SENSORS_COUNT     // number of sensors
-#define LENVALUES 2
-size_t lenvalues=LENVALUES;       // max of values for sensor
-long int values[LENVALUES];
-
-struct sensor_t
-{
-  char driver[5];         // driver name
-  char type[5];           // driver name
-  int address;            // i2c address
-} sensors[SENSORS_LEN];
-SensorDriver* sd[SENSORS_LEN];
-
-
-LongIntBuffer cbt60mean;
-LongIntBuffer cbh60mean;
-
-
-typedef struct {
-  uint8_t    sw_version;       // 0x00  Version of the I2C_GPS sw
-} status_t;
-
-typedef struct {
-  uint16_t     sample;
-  uint16_t     mean60;
-  uint16_t     mean;
-  uint16_t     max;
-  uint16_t     min;
-  uint16_t     sigma;
-} values_t;
-
-typedef struct {
-
-//Status registers
-  status_t     status;         // 0x00  status register
-
-//temperature data
-  values_t             temperature;               // 0x01
-
-//humidity data
-  values_t             humidity;
-
-} I2C_REGISTERS;
-
-
-typedef struct {
-
-//sample mode
-  bool                  oneshot;                  // one shot active
-  uint8_t               i2c_address;              // i2c bus address (short unsigned int)
-  uint8_t               i2c_temperature_address ; // i2c bus address of temperature sensor (short unsigned int)
-  uint8_t               i2c_humidity_address ;    // i2c bus address of humidity sensor (short unsigned int)
-  void save (int* p) volatile {                            // save to eeprom
-
-    IF_SDEBUG(Serial.print(F("oneshot: "))); IF_SDEBUG(Serial.println(oneshot));
-    IF_SDEBUG(Serial.print(F("i2c address: "))); IF_SDEBUG(Serial.println(i2c_address));
-    IF_SDEBUG(Serial.print(F("i2c temperature address: "))); IF_SDEBUG(Serial.println(i2c_temperature_address));
-    IF_SDEBUG(Serial.print(F("i2c humidity address: ")));    IF_SDEBUG(Serial.println(i2c_humidity_address));
-
-    *p+=EEPROM_writeAnything(*p, oneshot);
-    *p+=EEPROM_writeAnything(*p, i2c_address);
-    *p+=EEPROM_writeAnything(*p, i2c_temperature_address);
-    *p+=EEPROM_writeAnything(*p, i2c_humidity_address);
-  }
-  
-  void load (int* p) volatile {                            // load from eeprom
-    *p+=EEPROM_readAnything(*p, oneshot);
-    *p+=EEPROM_readAnything(*p, i2c_address);
-    *p+=EEPROM_readAnything(*p, i2c_temperature_address);
-    *p+=EEPROM_readAnything(*p, i2c_humidity_address);
-  }
-} I2C_WRITABLE_REGISTERS;
-
-
-volatile static I2C_REGISTERS    i2c_buffer1;
-volatile static I2C_REGISTERS    i2c_buffer2;
-
-volatile static I2C_REGISTERS*   i2c_dataset1;
-volatile static I2C_REGISTERS*   i2c_dataset2;
-volatile static I2C_REGISTERS*   i2c_datasettmp;
-
-volatile static I2C_WRITABLE_REGISTERS  i2c_writablebuffer1;
-volatile static I2C_WRITABLE_REGISTERS  i2c_writablebuffer2;
-
-volatile static I2C_WRITABLE_REGISTERS* i2c_writabledataset1;
-volatile static I2C_WRITABLE_REGISTERS* i2c_writabledataset2;
-volatile static I2C_WRITABLE_REGISTERS* i2c_writabledatasettmp;
-
-volatile static uint8_t         receivedCommands[MAX_SENT_BYTES];
-volatile static uint8_t         new_command;                        //new command received (!=0)
-
-float meanft;
-float meanfh;
-float sum2;
-float sum;
-uint8_t nsamplet,nsampleh,nsample1;
-int lastsize=-1;
-
-// one shot management
-static bool oneshot;
-static bool start=false;
-static bool stop=false;
-
-unsigned long starttime, regsettime;
-boolean forcedefault=false;
-
-//////////////////////////////////////////////////////////////////////////////////////
-// I2C handlers
-// Handler for requesting data
-//
-void requestEvent()
-{
-  //IF_SDEBUG(Serial.print("request event: "));
-  //IF_SDEBUG(Serial.println(receivedCommands[0]));
-  //IF_SDEBUG(Serial.println(*((uint8_t *)(i2c_dataset2)+receivedCommands[0]),HEX));
-  //IF_SDEBUG(Serial.println(*((uint8_t *)(i2c_dataset2)+receivedCommands[0]+1),HEX));
-  //IF_SDEBUG(Serial.println(*((uint8_t *)(i2c_dataset2)+receivedCommands[0]+2),HEX));
-  //IF_SDEBUG(Serial.println(*((uint8_t *)(i2c_dataset2)+receivedCommands[0]+3),HEX));
-
-  if ((millis()-regsettime) > 5000) {
-
-    // missing
-    //Wire.write(0xFF);
-    //Wire.write(0xFF);
-    //Wire.write(0xFF);
-    //Wire.write(0xFF);
-
-    // zero
-    //Wire.write(0);
-    //Wire.write(0);
-    //Wire.write(0);
-    //Wire.write(0);
-
-    IF_SDEBUG(Serial.println("late"));
-
-  }else{
-
-    Wire.write(((uint8_t *)i2c_dataset2)+receivedCommands[0],4);
-    //Write up to 4 byte, since master is responsible for reading and sending NACK
-    //32 byte limit is in the Wire library, we have to live with it unless writing our own wire library
-  }
-  regsettime=0;
-}
-
-//Handler for receiving data
-void receiveEvent( int bytesReceived)
-{
-
-  //IF_SDEBUG(Serial.print("receive event, bytes:"));
-  //IF_SDEBUG(Serial.println(bytesReceived));
-
-  uint8_t  *ptr1, *ptr2;
-     //IF_SDEBUG(SSerial.print("received:"));
-     for (int a = 0; a < bytesReceived; a++) {
-          if (a < MAX_SENT_BYTES) {
-               receivedCommands[a] = Wire.read();
-	       //IF_SDEBUG(Serial.println(receivedCommands[a]));
-          } else {
-               Wire.read();  // if we receive more data then allowed just throw it away
-          }
-     }
-
-     if (bytesReceived == 2){
-       // check for a command
-       if (receivedCommands[0] == I2C_TH_COMMAND) {
-	 //IF_SDEBUG(Serial.print("       received command:"));IF_SDEBUG(Serial.println(receivedCommands[1],HEX));
-	 new_command = receivedCommands[1]; return; }
-     }
-
-     if (bytesReceived == 1){
-       //read address for a given register
-       //Addressing over the reg_map fallback to first byte
-       if(bytesReceived == 1 && ( (receivedCommands[0] < 0) || (receivedCommands[0] >= REG_MAP_SIZE))) {
-	 receivedCommands[0]=0;
-	 regsettime=0;
-       }else{
-	 regsettime=millis();
-       }
-       //IF_SDEBUG(Serial.print("set register:"));IF_SDEBUG(Serial.println(receivedCommands[0]));
-       return;
-     }
-
-     //More than 1 byte was received, so there is definitely some data to write into a register
-     //Check for writeable registers and discard data is it's not writeable
-
-     //IF_SDEBUG(Serial.print("         check  writable buffer:"));
-     //IF_SDEBUG(Serial.println(receivedCommands[0]));
-     //IF_SDEBUG(Serial.println(I2C_TH_MAP_WRITABLE));
-     //IF_SDEBUG(Serial.println(I2C_TH_MAP_WRITABLE+REG_WRITABLE_MAP_SIZE));
-
-     if ((receivedCommands[0]>=I2C_TH_MAP_WRITABLE) && (receivedCommands[0] < (I2C_TH_MAP_WRITABLE+REG_WRITABLE_MAP_SIZE))) {    
-       if ((receivedCommands[0]+(unsigned int)(bytesReceived-1)) <= (I2C_TH_MAP_WRITABLE+REG_WRITABLE_MAP_SIZE)) {
-	 //Writeable registers
-	 // the two buffer should be in sync
-	 ptr1 = (uint8_t *)i2c_writabledataset1+receivedCommands[0]-I2C_TH_MAP_WRITABLE;
-	 ptr2 = (uint8_t *)i2c_writabledataset2+receivedCommands[0]-I2C_TH_MAP_WRITABLE;
-	 for (int a = 1; a < bytesReceived; a++) { 
-	   //IF_SDEBUG(Serial.print("write in writable buffer:"));IF_SDEBUG(Serial.println(a));IF_SDEBUG(Serial.println(receivedCommands[a]));
-	   *ptr1++ = receivedCommands[a];
-	   *ptr2++ = receivedCommands[a];
-	 }
-	 // new data written
-       }
-    }
-}
-
-/////////////////////////////////////////////////////////////////////////////////////////////////////////
-
-void mgr_command(){
-
-  static uint8_t _command;
-
-  //IF_SDEBUG(Serial.println("writable buffer exchange"));
-  // disable interrupts for atomic operation
-  noInterrupts();
-  //exchange double buffer
-  i2c_writabledatasettmp=i2c_writabledataset1;
-  i2c_writabledataset1=i2c_writabledataset2;
-  i2c_writabledataset2=i2c_writabledatasettmp;
-  interrupts();
-
-  //Check for new incoming command on I2C
-  if (new_command!=0) {
-    _command = new_command;                                                   //save command byte for processing
-    new_command = 0;                                                          //clear it
-    //_command = _command & 0x0F;                                               //empty 4MSB bits   
-    switch (_command) {
-    case I2C_TH_COMMAND_ONESHOT_START:
-      IF_SDEBUG(Serial.println("COMMAND: oneshot start"));
-      start=true;
-      break;          
-    case I2C_TH_COMMAND_ONESHOT_STOP:
-      IF_SDEBUG(Serial.println("COMMAND: oneshot stop"));
-      stop=true;
-      break;
-    case I2C_TH_COMMAND_START:
-      IF_SDEBUG(Serial.println("COMMAND: start"));
-      start=true;
-      starttime = millis();
-      break;
-    case I2C_TH_COMMAND_STOP:
-      IF_SDEBUG(Serial.println("COMMAND: stop"));
-      stop=true;
-      start=false;
-      break;
-    case I2C_TH_COMMAND_STOP_START:
-      IF_SDEBUG(Serial.println("COMMAND: stop and start"));
-      stop=true;      
-      start=true;
-      starttime = millis();
-      break;
-    case I2C_TH_COMMAND_SAVE:
-      IF_SDEBUG(Serial.println(F("COMMAND: save")));
-
-      // save configuration to eeprom
-      IF_SDEBUG(Serial.println(F("save configuration to eeprom")));
-      int p=0;
-
-      // save configuration version on eeprom
-      p+=EEPROM_writeAnything(p, confver);
-      //save writable registers
-      i2c_writabledataset2->save(&p);
-
-      break;
-    } //switch  
-  }
-
-
-  //IF_SDEBUG(Serial.print(F("oneshot : ")));IF_SDEBUG(Serial.println(i2c_writabledataset2->oneshot));
-  //IF_SDEBUG(Serial.print(F("oneshot start : ")));IF_SDEBUG(Serial.println(start));
-  //IF_SDEBUG(Serial.print(F("oneshot stop  : ")));IF_SDEBUG(Serial.println(stop));
-
-  if (stop) {
-
-    IF_SDEBUG(Serial.println("exchange double buffer"));
-
-    // disable interrupts for atomic operation
-    noInterrupts();
-    //exchange double buffer
-    i2c_datasettmp=i2c_dataset1;
-    i2c_dataset1=i2c_dataset2;
-    i2c_dataset2=i2c_datasettmp;
-    interrupts();
-    // new data published
-
-    IF_SDEBUG(Serial.println("clean buffer"));
-    uint8_t *ptr;
-    //Init to FF i2c_dataset1;
-    ptr = (uint8_t *)i2c_dataset1;
-    for (int i=0;i<REG_MAP_SIZE;i++) { *ptr |= 0xFF; ptr++;}
- 
-    // resets the buffer into an original state (with no data)	
-    cbt60mean.clear();
-    cbh60mean.clear();
-
-   stop=false;
-  }
-}
-
-
+#include "i2c-th.h"
 
 void setup() {
-
-  uint8_t i;
-
-  /*
-  Nel caso di un chip in standalone senza bootloader, la prima
-  istruzione che è bene mettere nel setup() è sempre la disattivazione
-  del Watchdog stesso: il Watchdog, infatti, resta attivo dopo il
-  reset e, se non disabilitato, esso può provare il reset perpetuo del
-  microcontrollore
-  */
   wdt_disable();
+  TRACE_BEGIN(230400);
 
-  // enable watchdog with timeout to 8s
-  wdt_enable(WDTO_8S);
+  readable_data_read_ptr = &readable_data_1;
+  readable_data_write_ptr = &readable_data_2;
+  writable_data_ptr = &writable_data;
 
-  IF_SDEBUG(Serial.begin(115200));        // connect to the serial port
-  IF_SDEBUG(Serial.print(F("Start firmware version: ")));
-  IF_SDEBUG(Serial.println(VERSION));
+  readable_data_write_ptr->module_type = MODULE_TYPE;
+  readable_data_write_ptr->module_version = MODULE_VERSION;
+  reset_buffers();
+  memcpy((void *) readable_data_read_ptr, (const void*) readable_data_write_ptr, sizeof(readable_data_t));
 
-  regsettime=0;
+  is_event_sensors_reading = false;
 
-  // inizialize double buffer
-  i2c_dataset1=&i2c_buffer1;
-  i2c_dataset2=&i2c_buffer2;
-
-  // inizialize writable double buffer
-  i2c_writabledataset1=&i2c_writablebuffer1;
-  i2c_writabledataset2=&i2c_writablebuffer2;
-
-  meanft=0.;
-  meanfh=0.;
-  nsamplet=0;
-  nsampleh=0;
-  nsample1=0;
-
-#define SAMPLE1 60000/SAMPLERATE
-#define SAMPLE2 180
-
-  cbt60mean.init(SAMPLE2);
-  cbh60mean.init(SAMPLE2);
-
-
-  IF_SDEBUG(Serial.println(F("i2c_dataset 1&2 set to 1")));
-
-  uint8_t *ptr;
-  //Init to FF i2c_dataset1;
-  ptr = (uint8_t *)i2c_dataset1;
-  for (i=0;i<REG_MAP_SIZE;i++) { *ptr |= 0xFF; ptr++;}
-
-  //Init to FF i2c_dataset1;
-  ptr = (uint8_t *)i2c_dataset2;
-  for (i=0;i<REG_MAP_SIZE;i++) { *ptr |= 0xFF; ptr++;}
-
-
-
-  IF_SDEBUG(Serial.println(F("i2c_writabledataset 1&2 set to 1")));
-  //Init to FF i2c_writabledataset1;
-  ptr = (uint8_t *)i2c_writabledataset1;
-  for (i=0;i<REG_WRITABLE_MAP_SIZE;i++) { *ptr |= 0xFF; ptr++;}
-
-  //Init to FF i2c_writabledataset2;
-  ptr = (uint8_t *)i2c_writabledataset2;
-  for (i=0;i<REG_WRITABLE_MAP_SIZE;i++) { *ptr |= 0xFF; ptr++;}
-
-
-  //Set up default parameters
-  i2c_dataset1->status.sw_version          = VERSION;
-  i2c_dataset2->status.sw_version          = VERSION;
-
-
-  pinMode(FORCEDEFAULTPIN, INPUT_PULLUP);
-  pinMode(LEDPIN, OUTPUT); 
-
-  if (digitalRead(FORCEDEFAULTPIN) == LOW) {
-    digitalWrite(LEDPIN, HIGH);
-    forcedefault=true;
-  }
-
-
-  // load configuration saved on eeprom
-  IF_SDEBUG(Serial.println(F("try to load configuration from eeprom")));
-  int p=0;
-  // check for configuration version on eeprom
-  char EE_confver[9];
-  p+=EEPROM_readAnything(p, EE_confver);
-
-  if((strcmp(EE_confver,confver ) == 0) && !forcedefault)
-    {
-      //load writable registers
-      IF_SDEBUG(Serial.println(F("load writable registers from eeprom")));
-      i2c_writabledataset1->load(&p);
-      i2c_writabledataset2->oneshot=i2c_writabledataset1->oneshot;
-      i2c_writabledataset2->i2c_address=i2c_writabledataset1->i2c_address;
-      i2c_writabledataset2->i2c_temperature_address=i2c_writabledataset1->i2c_temperature_address;
-      i2c_writabledataset2->i2c_humidity_address=i2c_writabledataset1->i2c_humidity_address;
-    }
-  else
-    {
-      IF_SDEBUG(Serial.println(F("EEPROM data not useful or set pin activated")));
-      IF_SDEBUG(Serial.println(F("set default values for writable registers")));
-      // set default to oneshot
-      i2c_writabledataset1->oneshot=false;
-      i2c_writabledataset2->oneshot=false;
-      i2c_writabledataset1->i2c_address = I2C_TH_DEFAULTADDRESS;
-      i2c_writabledataset2->i2c_address = I2C_TH_DEFAULTADDRESS;
-      i2c_writabledataset1->i2c_temperature_address = TEMPERATURE_DEFAULTADDRESS;
-      i2c_writabledataset2->i2c_temperature_address = TEMPERATURE_DEFAULTADDRESS;
-      i2c_writabledataset1->i2c_humidity_address = HUMIDITY_DEFAULTADDRESS;
-      i2c_writabledataset2->i2c_humidity_address = HUMIDITY_DEFAULTADDRESS;
-    }
-
-  IF_SDEBUG(Serial.print(F("i2c address: ")));
-  IF_SDEBUG(Serial.println(i2c_writabledataset1->i2c_address));
-  IF_SDEBUG(Serial.print(F("i2c temperature address: ")));
-  IF_SDEBUG(Serial.println(i2c_writabledataset1->i2c_temperature_address));
-  IF_SDEBUG(Serial.print(F("i2c humidity address: ")));
-  IF_SDEBUG(Serial.println(i2c_writabledataset1->i2c_humidity_address));
-  IF_SDEBUG(Serial.print(F("oneshot: ")));
-  IF_SDEBUG(Serial.println(i2c_writabledataset1->oneshot));
-
-  oneshot=i2c_writabledataset2->oneshot;
-
-  //Start I2C communication routines
-  Wire.begin(i2c_writabledataset1->i2c_address);
-  
-  //set the i2c clock 
-  //TWBR = ((F_CPU / I2C_CLOCK) - 16) / 2;
-  //TWBR =255    //  30418,25 Hz  : minimum freq with prescaler set to 1 and CPU clock to 16MHz
-  Wire.setClock(I2C_CLOCK);
-
-  //The Wire library enables the internal pullup resistors for SDA and SCL.
-  //You can turn them off after Wire.begin()
-  // do not need this with patched Wire library
-  //digitalWrite( SDA, LOW);
-  //digitalWrite( SCL, LOW);
-  //digitalWrite( SDA, HIGH);
-  //digitalWrite( SCL, HIGH);
-
-  Wire.onRequest(requestEvent);          // Set up event handlers
-  Wire.onReceive(receiveEvent);
-
-  unsigned char sensors_count = 0;
-
-  #if (USE_SENSORS_ADT == 1)
-    strcpy(sensors[sensors_count].driver,"I2C");
-    strcpy(sensors[sensors_count].type,"ADT");
-    sensors[sensors_count].address=i2c_writabledataset1->i2c_temperature_address;
-    sensors_count++;
+  #if (USE_WDT_TASK)
+  is_event_wdt = false;
   #endif
 
-  #if (USE_SENSORS_HIH == 1)
-    strcpy(sensors[sensors_count].driver,"I2C");
-    strcpy(sensors[sensors_count].type,"HIH");
-    sensors[sensors_count].address=i2c_writabledataset1->i2c_humidity_address;
-    sensors_count++;
+  is_event_i2c_receive = false;
+  wdt_timer.value = 0;
+
+  #if ((REPORT_MINUTES / OBSERVATIONS_MINUTES) % 2 == 0)
+  samples_count = SAMPLE_COUNT_MAX;
+  #else
+  samples_count = SAMPLE_COUNT_MIN;
   #endif
 
-  #if (USE_SENSORS_HYT == 1)
-    strcpy(sensors[sensors_count].driver,"I2C");
-    strcpy(sensors[sensors_count].type,"HYT");
-    sensors[sensors_count].address=i2c_writabledataset1->i2c_temperature_address;
-    sensors_count++;
-  #endif
+  ready_tasks_count = 0;
+  i2c_rx_data_length = 0;
 
-  for (int i = 0; i < SENSORS_LEN; i++) {
+  pinMode(CONFIGURATION_RESET_PIN, INPUT_PULLUP);
+  load_configuration();
 
-    sd[i]=SensorDriver::create(sensors[i].driver,sensors[i].type);
-    if (sd[i] == NULL){
-      IF_SDEBUG(Serial.print(sensors[i].driver));
-      IF_SDEBUG(Serial.print(F("-")));
-      IF_SDEBUG(Serial.print(sensors[i].type));
-      IF_SDEBUG(Serial.println(F(": driver not created !")));
-    }else{
-      sd[i]->setup(sensors[i].driver,sensors[i].address);
-    }
-  }
+  Wire.begin(configuration.i2c_address);
+  Wire.setClock(I2C_BUS_CLOCK);
+  Wire.onRequest(i2c_request_interrupt_handler);
+  Wire.onReceive(i2c_receive_interrupt_handler);
 
-  starttime = millis();
+  init_sensors();
 
-  IF_SDEBUG(Serial.println(F("end setup")));
+  set_sleep_mode(SLEEP_MODE_PWR_DOWN);
+  awakened_event_occurred_time_ms = millis();
 
+  wdt_init(WDT_TIMER);
+
+  state = INIT;
 }
 
 void loop() {
+  switch (state) {
+    case INIT:
+      #if (USE_POWER_DOWN)
+      state = ENTER_POWER_DOWN;
+      #else
+      state = TASKS_EXECUTION;
+      #endif
+      wdt_timer.interrupt_count = WDT_INTERRUPT_COUNT_DEFAULT;
+      break;
 
-  long int t;
-  long int h;
-  float mean;
-  long int maxv,minv;
-  long int value;
+    #if (USE_POWER_DOWN)
+    case ENTER_POWER_DOWN:
+      #if (USE_WDT_TO_WAKE_UP_FROM_SLEEP == false)
+      wdt_disable();
+      #endif
 
-  uint8_t i;
+      power_down(&awakened_event_occurred_time_ms);
 
-  wdt_reset();
+      #if (USE_WDT_TO_WAKE_UP_FROM_SLEEP == false)
+      wdt_init(WDT_TIMER);
+      #endif
 
-  mgr_command();
+      state = TASKS_EXECUTION;
+      wdt_timer.interrupt_count = WDT_INTERRUPT_COUNT_DEFAULT;
+      break;
+    #endif
 
-  if (! start) return;
+    case TASKS_EXECUTION:
+      if (is_event_sensors_reading)
+        sensors_reading_task();
 
-  long int timetowait;
-  long unsigned int waittime,maxwaittime=0;
+      #if (USE_WDT_TASK)
+      if (is_event_wdt)
+        wdt_task();
+      #endif
 
-  timetowait= SAMPLERATE - (millis() - starttime) ;
-  //IF_SDEBUG(Serial.print("elapsed time: "));
-  //IF_SDEBUG(Serial.println(millis() - starttime));
-  if (timetowait > 0) {
-    return;
+      if (is_event_i2c_receive)
+        i2c_receive_task();
+
+      if (ready_tasks_count == 0)
+        state = END;
+
+      wdt_timer.interrupt_count = WDT_INTERRUPT_COUNT_DEFAULT;
+      break;
+
+    case END:
+      state = INIT;
+      wdt_timer.interrupt_count = WDT_INTERRUPT_COUNT_DEFAULT;
+      break;
+  }
+}
+
+void print_configuration() {
+  char stima_name[20];
+  getStimaNameByType(stima_name, configuration.module_type);
+  SERIAL_INFO("--> type: %s\r\n", stima_name);
+  SERIAL_INFO("--> version: %d\r\n", configuration.module_version);
+  SERIAL_INFO("--> i2c address: 0x%x (%d)\r\n", configuration.i2c_address, configuration.i2c_address);
+  SERIAL_INFO("--> oneshot: %s\r\n", configuration.is_oneshot ? "on" : "off");
+  SERIAL_INFO("--> continuous: %s\r\n", configuration.is_continuous ? "on" : "off");
+  SERIAL_INFO("--> i2c temperature address: 0x%x (%d)\r\n", configuration.i2c_temperature_address, configuration.i2c_temperature_address);
+  SERIAL_INFO("--> i2c humidity address: 0x%x (%d)\r\n\r\n", configuration.i2c_humidity_address, configuration.i2c_temperature_address);
+}
+
+void save_configuration(bool is_default) {
+  if (is_default) {
+    SERIAL_INFO("Save default configuration... [ OK ]\r\n");
+    configuration.module_type = MODULE_TYPE;
+    configuration.module_version = MODULE_VERSION;
+    configuration.i2c_address = CONFIGURATION_DEFAULT_I2C_ADDRESS;
+    configuration.is_oneshot = CONFIGURATION_DEFAULT_IS_ONESHOT;
+    configuration.is_continuous = CONFIGURATION_DEFAULT_IS_CONTINUOUS;
+    configuration.i2c_temperature_address = CONFIGURATION_DEFAULT_TEMPERATURE_ADDRESS;
+    configuration.i2c_humidity_address = CONFIGURATION_DEFAULT_HUMIDITY_ADDRESS;
+
+    #if (USE_SENSOR_ADT)
+    configuration.i2c_temperature_address = 0x28;
+    #endif
+
+    #if (USE_SENSOR_HIH)
+    configuration.i2c_humidity_address = 0x28;
+    #endif
+
+    #if (USE_SENSOR_HYT)
+    configuration.i2c_temperature_address = HYT271_DEFAULT_ADDRESS;
+    configuration.i2c_humidity_address = HYT271_DEFAULT_ADDRESS;
+    #endif
   }
   else {
-    if (timetowait < -10) {
-      IF_SDEBUG(Serial.print(F("WARNIG: timing error , I am late ")));    
-      IF_SDEBUG(Serial.println(timetowait));    
-    }
+    SERIAL_INFO("Save configuration... [ OK ]\r\n");
+    configuration.i2c_address = writable_data.i2c_address;
+    configuration.is_oneshot = writable_data.is_oneshot;
+    configuration.is_continuous = writable_data.is_continuous;
+    configuration.i2c_temperature_address = writable_data.i2c_temperature_address;
+    configuration.i2c_humidity_address = writable_data.i2c_humidity_address;
   }
 
-  //starttime = millis()+timetowait;
-  starttime += SAMPLERATE;
+  ee_write(&configuration, CONFIGURATION_EEPROM_ADDRESS, sizeof(configuration));
 
-  // prepare sensors to measure
-  for (int i = 0; i < SENSORS_LEN; i++) {
-    if (!sd[i] == NULL){
-      if (sd[i]->prepare(waittime) == SD_SUCCESS){
-	maxwaittime=max(maxwaittime,waittime);
-      }else{
-	IF_SDEBUG(Serial.print(sensors[i].driver));
-	IF_SDEBUG(Serial.println(": prepare failed !"));
+  print_configuration();
+}
+
+void load_configuration() {
+  ee_read(&configuration, CONFIGURATION_EEPROM_ADDRESS, sizeof(configuration));
+
+  if (configuration.module_type != MODULE_TYPE || configuration.module_version != MODULE_VERSION || digitalRead(CONFIGURATION_RESET_PIN) == LOW) {
+    save_configuration(CONFIGURATION_DEFAULT);
+  }
+  else {
+    SERIAL_INFO("Load configuration... [ OK ]\r\n");
+    print_configuration();
+  }
+
+  writable_data.i2c_address = configuration.i2c_address;
+  writable_data.is_oneshot = configuration.is_oneshot;
+}
+
+void init_sensors () {
+  is_first_run = true;
+  sensors_count = 0;
+
+  SERIAL_INFO("Sensors: [ OK ]\r\n");
+
+  #if (USE_SENSOR_ADT)
+  SensorDriver::createAndSetup(SENSOR_DRIVER_I2C, SENSOR_TYPE_ADT, &is_sensor_adt_setted, &is_sensor_adt_prepared, configuration.i2c_temperature_address, sensors, &sensors_count);
+  SERIAL_INFO("--> %u: %s-%s\r\n", sensors_count, SENSOR_DRIVER_I2C, SENSOR_TYPE_ADT);
+  #endif
+
+  #if (USE_SENSOR_HIH)
+  SensorDriver::createAndSetup(SENSOR_DRIVER_I2C, SENSOR_TYPE_HIH, &is_sensor_hih_setted, &is_sensor_hih_prepared, configuration.i2c_humidity_address, sensors, &sensors_count);
+  SERIAL_INFO("--> %u: %s-%s\r\n", sensors_count, SENSOR_DRIVER_I2C, SENSOR_TYPE_HIH);
+  #endif
+
+  #if (USE_SENSOR_HYT)
+  SensorDriver::createAndSetup(SENSOR_DRIVER_I2C, SENSOR_TYPE_HYT, &is_sensor_hyt_setted, &is_sensor_hyt_prepared, configuration.i2c_temperature_address, sensors, &sensors_count);
+  SERIAL_INFO("--> %u: %s-%s\r\n", sensors_count, SENSOR_DRIVER_I2C, SENSOR_TYPE_HYT);
+  #endif
+
+  SERIAL_INFO("\r\n");
+
+  if (configuration.is_continuous) {
+    #if (REPORT_MINUTES != OBSERVATIONS_MINUTES)
+    SERIAL_INFO("--> acquiring %u~%u samples in %u minutes\r\n\r\n", SAMPLE_COUNT_MIN, SAMPLE_COUNT_MAX, OBSERVATIONS_MINUTES);
+    #else
+    SERIAL_INFO("--> acquiring %u samples in %u minutes\r\n\r\n", SAMPLE_COUNT_MIN, OBSERVATIONS_MINUTES);
+    #endif
+    SERIAL_INFO("T-IST\tT-MIN\tT-MED\tT-MAX\tH-IST\tH-MIN\tH-MED\tH-MAX\tT-CNT\tH-CNT\r\n");
+  }
+}
+
+ISR(WDT_vect) {
+  wdt_timer.interrupt_count--;
+
+  if (wdt_timer.interrupt_count == 0) {
+    wdt_disable();
+    wdt_reset();
+    wdt_enable(WDTO_15MS);
+    while(1);
+  }
+
+  if (wdt_timer.value == WDT_TIMER_MAX_VALUE)
+    wdt_timer.value = 0;
+
+  wdt_timer.value += WDT_OFFSET;
+
+  #if (USE_WDT_TASK)
+  noInterrupts();
+  if (!is_event_wdt) {
+    is_event_wdt = true;
+    ready_tasks_count++;
+  }
+  interrupts();
+  #endif
+}
+
+void i2c_request_interrupt_handler() {
+  Wire.write((uint8_t *)readable_data_read_ptr+readable_data_address, readable_data_length);
+}
+
+void i2c_receive_interrupt_handler(int receive_bytes_count) {
+  for (uint8_t i=0; i<receive_bytes_count; i++)
+    i2c_rx_data[i] = Wire.read();
+
+  i2c_rx_data_length = receive_bytes_count;
+
+  noInterrupts();
+  if (!is_event_i2c_receive) {
+    is_event_i2c_receive = true;
+    ready_tasks_count++;
+  }
+  interrupts();
+}
+
+#if (USE_WDT_TASK)
+void wdt_task() {
+
+  if (executeWdtTaskEach(SAMPLE_SECONDS) && configuration.is_continuous && is_continuous && is_start) {
+    sensor_state = INIT_SENSOR;
+    noInterrupts();
+    if (!is_event_sensors_reading) {
+      is_event_sensors_reading = true;
+      ready_tasks_count++;
+    }
+    interrupts();
+  }
+
+  noInterrupts();
+  is_event_wdt = false;
+  ready_tasks_count--;
+  interrupts();
+}
+#endif
+
+void samples_processing() {
+  uint8_t i;
+  uint32_t temperature = 0;
+  uint32_t humidity = 0;
+
+  bool is_processing_temperature = (temperature_samples.count + temperature_samples.error_count == samples_count && temperature_samples.error_count < SAMPLE_COUNT_TOLLERANCE);
+  bool is_processing_humidity = (humidity_samples.count + humidity_samples.error_count == samples_count && humidity_samples.error_count < SAMPLE_COUNT_TOLLERANCE);
+
+  if (is_processing_temperature) {
+    for (i = 0; i < temperature_samples.count; i++)
+      temperature += temperature_samples.values[i];
+
+    // average
+    temperature = temperature / temperature_samples.count;
+    temperature_observations.med[temperature_observations.count++] = temperature;
+    DEBUG_INFO("%u\t \t \t \t", temperature);
+  }
+
+  if (is_processing_humidity) {
+    for (i = 0; i < humidity_samples.count; i++)
+      humidity += humidity_samples.values[i];
+
+    // average
+    humidity = humidity / humidity_samples.count;
+    humidity_observations.med[humidity_observations.count++] = humidity;
+    DEBUG_INFO("%u\t \t \t \t", humidity);
+  }
+
+  if (is_processing_temperature || is_processing_humidity) {
+    DEBUG_INFO("%u/%u\t%u/%u\r\n", temperature_samples.count, samples_count, humidity_samples.count, samples_count);
+    temperature_samples.count = 0;
+    humidity_samples.count = 0;
+    #if (REPORT_MINUTES != OBSERVATIONS_MINUTES)
+    samples_count = (samples_count == SAMPLE_COUNT_MAX ? SAMPLE_COUNT_MIN : SAMPLE_COUNT_MAX);
+    #endif
+  }
+}
+
+//------------------------------------------------------------------------------
+// I2C-TH
+// STH: oneshot                   --> xxx.sample
+// ITH: continuous istantaneous   --> xxx.med60
+// MTH: continuous average        --> xxx.med
+// NTH: continuous min            --> xxx.min
+// XTH: continuous max            --> xxx.max
+//------------------------------------------------------------------------------
+void observations_processing() {
+  uint8_t i;
+  uint32_t temperature = 0;
+  uint32_t humidity = 0;
+  float sigma_temperature = 0;
+  float sigma_humidity = 0;
+
+  if (temperature_observations.count) {
+    readable_data_write_ptr->temperature.max = 0;
+
+    for (i = 0; i < temperature_observations.count; i++) {
+      temperature += temperature_observations.med[i];
+      readable_data_write_ptr->temperature.min = min(readable_data_write_ptr->temperature.min, temperature_observations.med[i]);
+      readable_data_write_ptr->temperature.max = max(readable_data_write_ptr->temperature.max, temperature_observations.med[i]);
+    }
+
+    // average
+    readable_data_write_ptr->temperature.med = temperature / temperature_observations.count;
+
+    // last observation
+    readable_data_write_ptr->temperature.med60 = temperature_observations.med[temperature_observations.count-1];
+
+    // last sample
+    readable_data_write_ptr->temperature.sample = temperature_samples.values[temperature_samples.count-1];
+
+    // standard deviation
+    for (i = 0; i < temperature_observations.count; i++)
+      sigma_temperature += pow(temperature_observations.med[i] - readable_data_write_ptr->temperature.med, 2);
+
+    sigma_temperature = sqrt(sigma_temperature/temperature_observations.count);
+
+    // da controllare !!!
+    readable_data_write_ptr->temperature.sigma = sigma_temperature * 100;
+  }
+
+  if (humidity_observations.count) {
+    readable_data_write_ptr->humidity.max = 0;
+
+    for (i = 0; i < humidity_observations.count; i++) {
+      humidity += humidity_observations.med[i];
+      readable_data_write_ptr->humidity.min = min(readable_data_write_ptr->humidity.min, humidity_observations.med[i]);
+      readable_data_write_ptr->humidity.max = max(readable_data_write_ptr->humidity.max, humidity_observations.med[i]);
+    }
+
+    // average
+    readable_data_write_ptr->humidity.med = humidity / humidity_observations.count;
+
+    // last observation
+    readable_data_write_ptr->humidity.med60 = humidity_observations.med[humidity_observations.count-1];
+
+    // last sample
+    readable_data_write_ptr->humidity.sample = humidity_samples.values[humidity_samples.count-1];
+
+    // standard deviation
+    for (i = 0; i < humidity_observations.count; i++)
+      sigma_humidity += pow(humidity_observations.med[i] - readable_data_write_ptr->humidity.med, 2);
+
+    sigma_humidity = sqrt(sigma_humidity / humidity_observations.count);
+
+    // da controllare !!!
+    readable_data_write_ptr->humidity.sigma = sigma_humidity * 100;
+  }
+
+  #if (SERIAL_TRACE_LEVEL == SERIAL_TRACE_LEVEL_INFO)
+  if (readable_data_write_ptr->temperature.med60 != UINT16_MAX)
+    SERIAL_INFO("%u\t", readable_data_write_ptr->temperature.med60);
+  else SERIAL_INFO("-----\t");
+
+  if (readable_data_write_ptr->temperature.min != UINT16_MAX)
+    SERIAL_INFO("%u\t", readable_data_write_ptr->temperature.min);
+  else SERIAL_INFO("-----\t");
+
+  if (readable_data_write_ptr->temperature.med != UINT16_MAX)
+    SERIAL_INFO("%u\t", readable_data_write_ptr->temperature.med);
+  else SERIAL_INFO("-----\t");
+
+  if (readable_data_write_ptr->temperature.max != UINT16_MAX)
+    SERIAL_INFO("%u\t", readable_data_write_ptr->temperature.max);
+  else SERIAL_INFO("-----\t");
+
+  if (readable_data_write_ptr->humidity.med60 != UINT16_MAX)
+    SERIAL_INFO("%u\t", readable_data_write_ptr->humidity.med60);
+  else SERIAL_INFO("---\t");
+
+  if (readable_data_write_ptr->humidity.min != UINT16_MAX)
+    SERIAL_INFO("%u\t", readable_data_write_ptr->humidity.min);
+  else SERIAL_INFO("---\t");
+
+  if (readable_data_write_ptr->humidity.med != UINT16_MAX)
+    SERIAL_INFO("%u\t", readable_data_write_ptr->humidity.med);
+  else SERIAL_INFO("---\t");
+
+  if (readable_data_write_ptr->humidity.max != UINT16_MAX)
+    SERIAL_INFO("%u\r\n", readable_data_write_ptr->humidity.max);
+  else SERIAL_INFO("---\r\n");
+  #endif
+}
+
+void sensors_reading_task () {
+  static uint8_t i;
+  static uint8_t retry;
+  static sensor_state_t state_after_wait;
+  static uint32_t delay_ms;
+  static uint32_t sensors_start_time_ms;
+  static int32_t values_readed_from_sensor[2];
+
+  switch (sensor_state) {
+    case INIT_SENSOR:
+      i = 0;
+      retry = 0;
+      state_after_wait = INIT_SENSOR;
+      sensor_state = PREPARE_SENSOR;
+      break;
+
+    case PREPARE_SENSOR:
+      sensors[i]->prepare();
+      delay_ms = sensors[i]->getDelay();
+      sensors_start_time_ms = sensors[i]->getStartTime();
+      state_after_wait = IS_SENSOR_PREPARED;
+      sensor_state = WAIT_STATE;
+      break;
+
+    case IS_SENSOR_PREPARED:
+      // success
+      if (sensors[i]->isPrepared()) {
+        sensor_state = GET_SENSOR;
       }
-    }
-  }
-
-  //wait sensors to go ready
-  IF_SDEBUG(Serial.print("# wait sensors for ms:");  Serial.println(maxwaittime));
-
-  //delay(maxwaittime);
-
-  long unsigned int inittime = millis();
-  while ((inittime + maxwaittime) > millis()){
-    mgr_command();
-  }
-
-
-  t=LONG_MAX;
-  h=LONG_MAX;
-
-  for (int i = 0; i < SENSORS_LEN; i++) 
-    {
-      if (!sd[i] == NULL){
-	
-	// get integers values       
-	for (int ii = 0; ii < lenvalues; ii++) {
-	  values[ii]=LONG_MAX;
-	}
-	
-	IF_SDEBUG(Serial.println(sensors[i].type));
-	if (sd[i]->get(values,lenvalues) == SD_SUCCESS){
-	  for (int ii = 0; ii < lenvalues; ii++) {
-	    IF_SDEBUG(Serial.print(F("value read: ")));IF_SDEBUG(Serial.println(values[ii]));
-	  }
-	  if (strcmp(sensors[i].type,"ADT") == 0) t=values[0];
-	  if (strcmp(sensors[i].type,"HIH") == 0) h=values[0];
-    if (strcmp(sensors[i].type,"HYT") == 0) {
-      h = values[0];
-      t = values[1];
-    }
-	}else{
-	  //IF_SDEBUG(Serial.println(F("Error: RETRY")));
-	  //delay(20);
-	  //if (sd[i]->get(values,lenvalues) == SD_SUCCESS){
-	  //  for (int ii = 0; ii < lenvalues; ii++) {
-	  //    IF_SDEBUG(Serial.print(F("value read: ")));IF_SDEBUG(Serial.println(values[ii]));
-	  //  }
-	  //  if (strcmp(sensors[i].type,"ADT") == 0) t=values[0];
-	  //  if (strcmp(sensors[i].type,"HIH") == 0) h=values[0];
-	  //}else{
-	    IF_SDEBUG(Serial.println(F("Error")));
-	  //}
-	}
+      // retry
+      else if (++retry < SENSORS_RETRY_COUNT_MAX) {
+        delay_ms = SENSORS_RETRY_DELAY_MS;
+        sensors_start_time_ms = millis();
+        state_after_wait = PREPARE_SENSOR;
+        sensor_state = WAIT_STATE;
       }
-    }
-  
+      // fail
+      else sensor_state = END_SENSOR_READING;
+      break;
 
-  i2c_dataset1->temperature.sample=t;
-  i2c_dataset1->humidity.sample=h;
+    case GET_SENSOR:
+      sensors[i]->get(values_readed_from_sensor, VALUES_TO_READ_FROM_SENSOR_COUNT);
+      delay_ms = sensors[i]->getDelay();
+      sensors_start_time_ms = sensors[i]->getStartTime();
+      state_after_wait = IS_SENSOR_GETTED;
+      sensor_state = WAIT_STATE;
+      break;
 
-  IF_SDEBUG(Serial.print(F("temperature: ")));
-  IF_SDEBUG(Serial.println(i2c_dataset1->temperature.sample));
-  IF_SDEBUG(Serial.print(F("humidity: ")));
-  IF_SDEBUG(Serial.println(i2c_dataset1->humidity.sample));
+    case IS_SENSOR_GETTED:
+      // success and end
+      if (sensors[i]->isEnd() && !sensors[i]->isReaded() && sensors[i]->isSuccess()) {
+        sensor_state = READ_SENSOR;
+      }
+      // success and not end
+      else if (sensors[i]->isSuccess()) {
+        sensor_state = GET_SENSOR;
+      }
+      // retry
+      else if (++retry < SENSORS_RETRY_COUNT_MAX) {
+        delay_ms = SENSORS_RETRY_DELAY_MS;
+        sensors_start_time_ms = millis();
+        state_after_wait = PREPARE_SENSOR;
+        sensor_state = WAIT_STATE;
+      }
+      // fail
+      else {
+        #if (USE_SENSOR_HYT || USE_SENSOR_ADT)
+        temperature_samples.error_count++;
+        #endif
 
-  if (oneshot) {
-    //if one shot we have finish
-    IF_SDEBUG(Serial.println(F("oneshot end")));
-    start=false;    
-    return;
+        #if (USE_SENSOR_HYT || USE_SENSOR_HIH)
+        humidity_samples.error_count++;
+        #endif
+
+        sensor_state = END_SENSOR_READING;
+      }
+      break;
+
+    case READ_SENSOR:
+      #if (USE_SENSOR_HYT)
+      if (strcmp(sensors[i]->getType(), SENSOR_TYPE_HYT) == 0) {
+        humidity_samples.values[humidity_samples.count++] = values_readed_from_sensor[0];
+        temperature_samples.values[temperature_samples.count++] = values_readed_from_sensor[1];
+      }
+      #endif
+      sensor_state = END_SENSOR_READING;
+      break;
+
+    case END_SENSOR_READING:
+      // next sensor
+      if (++i < sensors_count) {
+        retry = 0;
+        sensor_state = PREPARE_SENSOR;
+      }
+      // end
+      else {
+        if (configuration.is_continuous)
+          samples_processing();
+
+        for (i=0; i<sensors_count; i++)
+          sensors[i]->resetPrepared();
+
+        #if (SERIAL_TRACE_LEVEL == SERIAL_TRACE_LEVEL_INFO)
+        delay_ms = 10;
+        sensors_start_time_ms = millis();
+        state_after_wait = END_TASK;
+        sensor_state = WAIT_STATE;
+        #else
+        sensor_state = END_TASK;
+        #endif
+      }
+      break;
+
+    case END_TASK:
+      noInterrupts();
+      is_event_sensors_reading = false;
+      ready_tasks_count--;
+      interrupts();
+      break;
+
+    case END_SENSOR:
+      break;
+
+    case WAIT_STATE:
+      if (millis() - sensors_start_time_ms > delay_ms) {
+        sensor_state = state_after_wait;
+      }
+      break;
+  }
+}
+
+void i2c_receive_task() {
+  uint8_t i;
+
+  // SERIAL_DEBUG("I2C received %d  bytes: ", i2c_rx_data_length);
+
+  // #if (SERIAL_TRACE_LEVEL == SERIAL_TRACE_LEVEL_DEBUG)
+  // for (i=0; i<i2c_rx_data_length; i++) {
+  //   SERIAL_DEBUG("%x ",i2c_rx_data[i]);
+  // }
+  // #endif
+  // SERIAL_DEBUG("\r\n");
+
+  if (i2c_rx_data_length == 2 && is_readable_register(i2c_rx_data[0])) {
+    readable_data_address = i2c_rx_data[0];
+    readable_data_length = i2c_rx_data[1];
+  }
+  else if (i2c_rx_data_length == 2 && is_command(i2c_rx_data[0])) {
+    exec_command();
+  }
+  else if (is_writable_register(i2c_rx_data[0])) {
+    for (i=1; i<i2c_rx_data_length; i++)
+      ((uint8_t *)writable_data_ptr)[i2c_rx_data[0] - I2C_WRITE_REGISTER_START_ADDRESS] = i2c_rx_data[i];
   }
 
-  ///////////////////////////////////////////////
-  // statistical processing
-  ///////////////////////////////////////////////
+  noInterrupts();
+  is_event_i2c_receive = false;
+  ready_tasks_count--;
+  interrupts();
+}
 
-  // first level mean:   sample => observation
+void exchange_buffers() {
+  readable_data_temp_ptr = readable_data_write_ptr;
+  readable_data_write_ptr = readable_data_read_ptr;
+  readable_data_read_ptr = readable_data_temp_ptr;
+}
 
-  nsample1++;
+void reset_buffers() {
+  memset((void *) &readable_data_write_ptr->humidity, UINT16_MAX, sizeof(value_t));
+  memset((void *) &readable_data_write_ptr->temperature, UINT16_MAX, sizeof(value_t));
+  humidity_samples.count = 0;
+  temperature_samples.count = 0;
+  humidity_samples.error_count = 0;
+  temperature_samples.error_count = 0;
+  humidity_observations.count = 0;
+  temperature_observations.count = 0;
+}
 
-  // temperature and humidity mean
+void exec_command() {
+  #if (SERIAL_TRACE_LEVEL > SERIAL_TRACE_LEVEL_OFF)
+  char buffer[30];
+  #endif
 
-  if (t != LONG_MAX) {	
-    nsamplet++;
-    meanft += (float(t) - meanft) / nsamplet;
-  }
-  if (h != LONG_MAX) {	
-    nsampleh++;
-    meanfh += (float(h) - meanfh) / nsampleh;
-  }
+  switch(i2c_rx_data[1]) {
+    case I2C_TH_COMMAND_ONESHOT_START:
+    #if (SERIAL_TRACE_LEVEL > SERIAL_TRACE_LEVEL_OFF)
+    strcpy(buffer, "ONESHOT START");
+    #endif
+    is_oneshot = true;
+    is_continuous = false;
+    is_start = true;
+    is_stop = false;
+    commands();
+    break;
 
-  IF_SDEBUG(Serial.print("data in store first: "));
-  IF_SDEBUG(Serial.print(nsample1));
-  IF_SDEBUG(Serial.print(" : "));
-  IF_SDEBUG(Serial.print(nsamplet));
-  IF_SDEBUG(Serial.print(" : "));
-  IF_SDEBUG(Serial.println(nsampleh));
+    case I2C_TH_COMMAND_ONESHOT_STOP:
+    #if (SERIAL_TRACE_LEVEL > SERIAL_TRACE_LEVEL_OFF)
+    strcpy(buffer, "ONESHOT STOP");
+    #endif
+    is_oneshot = true;
+    is_continuous = false;
+    is_start = false;
+    is_stop = true;
+    commands();
+    break;
 
-  // after 1 minute store it in circular buffer and expose to i2c
-  if (nsample1 == SAMPLE1) {
+    case I2C_TH_COMMAND_ONESHOT_START_STOP:
+    #if (SERIAL_TRACE_LEVEL > SERIAL_TRACE_LEVEL_OFF)
+    strcpy(buffer, "ONESHOT START-STOP");
+    #endif
+    is_oneshot = true;
+    is_continuous = false;
+    is_start = true;
+    is_stop = true;
+    commands();
+    break;
 
-    if (nsamplet < (nsample1-MAXMISSING)){
-      i2c_dataset1->temperature.mean60=UINT_MAX;
-      cbt60mean.autoput(LONG_MAX);
-    }else{
-      i2c_dataset1->temperature.mean60=round(meanft);
-      cbt60mean.autoput(i2c_dataset1->temperature.mean60);
-    }
+    case I2C_TH_COMMAND_CONTINUOUS_START:
+    #if (SERIAL_TRACE_LEVEL > SERIAL_TRACE_LEVEL_OFF)
+    strcpy(buffer, "CONTINUOUS START");
+    #endif
+    is_oneshot = false;
+    is_continuous = true;
+    is_start = true;
+    is_stop = false;
+    commands();
+    // starttime = millis();
+    break;
 
+    case I2C_TH_COMMAND_CONTINUOUS_STOP:
+    #if (SERIAL_TRACE_LEVEL > SERIAL_TRACE_LEVEL_OFF)
+    strcpy(buffer, "CONTINUOUS STOP");
+    #endif
+    is_oneshot = false;
+    is_continuous = true;
+    is_start = false;
+    is_stop = true;
+    commands();
+    break;
 
-    if (nsampleh < (nsample1-MAXMISSING)){
-      i2c_dataset1->humidity.mean60=UINT_MAX;
-      cbh60mean.autoput(LONG_MAX);
-    }else{
-      i2c_dataset1->humidity.mean60=round(meanfh);
-      cbh60mean.autoput(i2c_dataset1->humidity.mean60);
-    }
+    case I2C_TH_COMMAND_CONTINUOUS_START_STOP:
+    #if (SERIAL_TRACE_LEVEL > SERIAL_TRACE_LEVEL_OFF)
+    strcpy(buffer, "CONTINUOUS START-STOP");
+    #endif
+    is_oneshot = false;
+    is_continuous = true;
+    is_start = true;
+    is_stop = true;
+    commands();
+    // starttime = millis();
+    break;
 
-    IF_SDEBUG(Serial.print("T mean: "));
-    IF_SDEBUG(Serial.println(i2c_dataset1->temperature.mean60));
-    IF_SDEBUG(Serial.print("H mean: "));
-    IF_SDEBUG(Serial.println(i2c_dataset1->humidity.mean60));
-
-    meanft=0.;
-    meanfh=0.;
-    nsamplet=0;
-    nsampleh=0;
-    nsample1=0;
-
-  }
-
-  // second level statistical processing
-
-  if (cbt60mean.getSize() != lastsize)  {
-
-    lastsize=cbt60mean.getSize();
-    
-    //temperature
-
-    if (cbt60mean.getSize() >= MINUTEFORREPORT) {
-      
-      int ndata=0;
-      mean=0.;
-      maxv=0;
-      minv= LONG_MAX;
-      for (i=0 ; i < cbt60mean.getSize() ; i++){
-	value=cbt60mean.peek(i);
-	
-	if (value != LONG_MAX) {	
-	  ndata++;
-	  IF_SDEBUG(Serial.print("cbt60mean: "));
-	  IF_SDEBUG(Serial.print(i));
-	  IF_SDEBUG(Serial.print(" : "));
-	  IF_SDEBUG(Serial.println(value));
-	  
-	  mean += float(value - mean) / (i+1);
-	  maxv = max(maxv, value);
-	  minv = min(minv, value);
-	}
-	
-      }
-      
-      if (ndata >= MINUTEFORREPORT) {
-	i2c_dataset1->temperature.mean=round(mean);
-	i2c_dataset1->temperature.max=maxv;
-	i2c_dataset1->temperature.min=minv;
-      }	else{
-	i2c_dataset1->temperature.mean=UINT_MAX;
-	i2c_dataset1->temperature.max=UINT_MAX;
-	i2c_dataset1->temperature.min=UINT_MAX;	
-      }
-
-      // sigma temperature
-      if (ndata >= MINUTEFORREPORT) {
-	sum2=0;
-	sum=0;
-	unsigned short int n=cbt60mean.getSize();
-	for (i=0 ; i < n ; i++){
-	  sum2 += cbt60mean.peek(i)*cbt60mean.peek(i);
-	  sum += cbt60mean.peek(i);
-	}
-	i2c_dataset1->temperature.sigma=round(sqrt((sum2-(sum*sum)/n)/n))+OFFSET;
-      }else{
-	i2c_dataset1->temperature.sigma=UINT_MAX;
-      }
-    }
-
-    //humidity
-      
-    if (cbh60mean.getSize() >= MINUTEFORREPORT) {
-    
-      int ndata=0;
-      mean=0;
-      maxv=0;
-      minv= LONG_MAX;
-      for (i=0 ; i < cbh60mean.getSize() ; i++){
-	value=cbh60mean.peek(i);
-	
-	if (value != LONG_MAX) {	
-	  ndata++;
-	  IF_SDEBUG(Serial.print("cbh60mean: "));
-	  IF_SDEBUG(Serial.print(i));
-	  IF_SDEBUG(Serial.print(" : "));
-	  IF_SDEBUG(Serial.println(value));
-	  
-	  mean += float(value - mean) / (i+1);
-	  maxv = max(maxv, value);
-	  minv = min(minv, value);
-	}
-      }	
-      if (ndata >= MINUTEFORREPORT) {
-	i2c_dataset1->humidity.mean=round(mean);
-	i2c_dataset1->humidity.max=maxv;
-	i2c_dataset1->humidity.min=minv;
-      }	else{
-	i2c_dataset1->humidity.mean=UINT_MAX;
-	i2c_dataset1->humidity.max=UINT_MAX;
-	i2c_dataset1->humidity.min=UINT_MAX;	
-      }
-
-      // sigma humidity
-    
-      if (ndata >= MINUTEFORREPORT) {
-	sum2=0;
-	sum=0;
-	unsigned short int n=cbh60mean.getSize();
-	for (i=0 ; i < n ; i++){
-	  sum2 += cbh60mean.peek(i)*cbh60mean.peek(i);
-	  sum += cbh60mean.peek(i);
-	}
-	i2c_dataset1->humidity.sigma=round(sqrt((sum2-(sum*sum)/n)/n))+OFFSET;
-      }else{
-	i2c_dataset1->humidity.sigma=UINT_MAX;
-      }
-
-    }
-    
-    
-    IF_SDEBUG(Serial.print(F("T mean  second order: ")));
-    IF_SDEBUG(Serial.println(i2c_dataset1->temperature.mean));
-    IF_SDEBUG(Serial.print(F("T max   second order: ")));
-    IF_SDEBUG(Serial.println(i2c_dataset1->temperature.max));
-    IF_SDEBUG(Serial.print(F("T min   second order: ")));
-    IF_SDEBUG(Serial.println(i2c_dataset1->temperature.min));
-    IF_SDEBUG(Serial.print(F("T sigma second order: ")));
-    IF_SDEBUG(Serial.println(i2c_dataset1->temperature.sigma));
-    
-    IF_SDEBUG(Serial.print(F("H mean second order: ")));
-    IF_SDEBUG(Serial.println(i2c_dataset1->humidity.mean));
-    IF_SDEBUG(Serial.print(F("H max second order: ")));
-    IF_SDEBUG(Serial.println(i2c_dataset1->humidity.max));
-    IF_SDEBUG(Serial.print(F("H min   second order: ")));
-    IF_SDEBUG(Serial.println(i2c_dataset1->humidity.min));
-    IF_SDEBUG(Serial.print(F("H sigma second order: ")));
-    IF_SDEBUG(Serial.println(i2c_dataset1->humidity.sigma));
+    case I2C_TH_COMMAND_SAVE:
+    is_oneshot = false;
+    is_continuous = false;
+    is_start = false;
+    is_stop = false;
+    SERIAL_DEBUG("Execute command [ SAVE ]\r\n");
+    save_configuration(CONFIGURATION_CURRENT);
+    break;
   }
 
-  digitalWrite(LEDPIN,!digitalRead(LEDPIN));  // blink Led
+  #if (SERIAL_TRACE_LEVEL > SERIAL_TRACE_LEVEL_OFF)
+  if (configuration.is_oneshot == is_oneshot || configuration.is_continuous == is_continuous) {
+    SERIAL_DEBUG("Execute [ %s ]\r\n", buffer);
+  }
+  else if (configuration.is_oneshot == is_continuous || configuration.is_continuous == is_oneshot) {
+    SERIAL_DEBUG("Ignore [ %s ]\r\n", buffer);
+  }
+  #endif
+}
 
+void commands() {
+  noInterrupts();
+
+  if (configuration.is_oneshot && is_oneshot && is_stop) {
+    if (temperature_samples.count == 1) {
+      readable_data_write_ptr->temperature.sample = temperature_samples.values[0];
+      SERIAL_INFO("--> temperature: %u\r\n", readable_data_write_ptr->temperature.sample);
+    }
+    else SERIAL_INFO("--> temperature: ---\r\n");
+
+    if (humidity_samples.count == 1) {
+      readable_data_write_ptr->humidity.sample = humidity_samples.values[0];
+      SERIAL_INFO("--> humidity: %u\r\n", readable_data_write_ptr->humidity.sample);
+    }
+    else SERIAL_INFO("--> humidity: ---\r\n");
+
+    exchange_buffers();
+  }
+  else if (configuration.is_continuous && is_continuous && is_stop) {
+    if (!is_first_run)
+      observations_processing();
+    else is_first_run = false;
+
+    exchange_buffers();
+  }
+
+  if (configuration.is_oneshot && is_oneshot && is_start) {
+    reset_buffers();
+    sensor_state = INIT_SENSOR;
+    if(!is_event_sensors_reading) {
+      is_event_sensors_reading = true;
+      ready_tasks_count++;
+    }
+  }
+  else if (configuration.is_continuous && is_continuous && is_start)
+    reset_buffers();
+  else if (is_start) {
+    reset_buffers();
+    exchange_buffers();
+  }
+
+  interrupts();
 }

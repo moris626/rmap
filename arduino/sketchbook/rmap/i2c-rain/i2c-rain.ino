@@ -1,11 +1,11 @@
 /**********************************************************************
-Copyright (C) 2016  Paolo Paruno <p.patruno@iperbole.bologna.it>
+Copyright (C) 2017  Marco Baldinetti <m.baldinetti@digiteco.it>
 authors:
-Paolo Paruno <p.patruno@iperbole.bologna.it>
+Marco Baldinetti <m.baldinetti@digiteco.it>
 
 This program is free software; you can redistribute it and/or
 modify it under the terms of the GNU General Public License as
-published by the Free Software Foundation; either version 2 of 
+published by the Free Software Foundation; either version 2 of
 the License, or (at your option) any later version.
 
 This program is distributed in the hope that it will be useful,
@@ -17,418 +17,360 @@ You should have received a copy of the GNU General Public License
 along with this program.  If not, see <http://www.gnu.org/licenses/>.
 **********************************************************************/
 
-/*********************************************************************
- *
- * This program implements tipping bucket rain gauge measure 
- * exported to i2c interface.
- * 
-**********************************************************************/
-/*
-buffer scrivibili da i2c
-viene scritto buffer1 e buffer2
-viene letto buffer2
-i puntatori a buffer1 e buffer2 vengono scambiati in una operazione atomica all'inizio del main loop
+/**********************************************************************
+ * DEBUG
+ *********************************************************************/
+/*! \file i2c-rain2.h
+    \brief i2c-rain include file
+
+    i2c-rain include file
 */
+#include <debug_config.h>
 
-/*
-buffer leggibili da i2c
-le elaborazioni scrivono sempre su buffer1
-viene sempre letto buffer2
-i puntatori a buffer1 e buffer2 vengono scambiati in una operazione atomica al comando stop
+/*!
+  \def SERIAL_TRACE_LEVEL
+  Debug level for sketch and library.
 */
+#define SERIAL_TRACE_LEVEL I2C_RAIN_SERIAL_TRACE_LEVEL
 
-#define VERSION 2             //Software version for cross checking
-
-#include <avr/wdt.h>
-#include "Wire.h"
-#include "registers-rain.h"         //Register definitions
-#include "config.h"
-//#include "circular.h"
-//#include "IntBuffer.h"
-//#include "FloatBuffer.h"
-
-#include "EEPROMAnything.h"
-
-#define REG_MAP_SIZE            sizeof(I2C_REGISTERS)       //size of register map
-#define REG_RAIN_SIZE           sizeof(rain_t)                  //size of register map for rain
-#define REG_WRITABLE_MAP_SIZE   sizeof(I2C_WRITABLE_REGISTERS)       //size of register map
-
-#define MAX_SENT_BYTES     0x0F                      //maximum amount of data that I could receive from a master device (register, plus 15 byte)
-
-char confver[9] = CONFVER; // version of configuration saved on eeprom
-
-
-typedef struct {
-  uint8_t    sw_version;     // Version of the I2C_RAIN sw
-} status_t;
-
-typedef struct {
-  uint16_t    tips;
-} rain_t;
-
-typedef struct {
-
-//Status registers
-  status_t     status;                   //  status register
-
-//rain data
-  rain_t                rain;            // 0x01 rain
-} I2C_REGISTERS;
-
-
-typedef struct {
-
-//sample mode
-  bool                  oneshot;         // one shot active
-  uint8_t               i2c_address;              // i2c bus address (short unsigned int)
-  void save (int* p) volatile {                            // save to eeprom
-
-    IF_SDEBUG(Serial.print(F("oneshot: "))); IF_SDEBUG(Serial.println(oneshot));
-    IF_SDEBUG(Serial.print(F("i2c address: "))); IF_SDEBUG(Serial.println(i2c_address));
-
-    *p+=EEPROM_writeAnything(*p, oneshot);
-    *p+=EEPROM_writeAnything(*p, i2c_address);
-  }
-  
-  void load (int* p) volatile {                            // load from eeprom
-    *p+=EEPROM_readAnything(*p, oneshot);
-    *p+=EEPROM_readAnything(*p, i2c_address);
-  }
-} I2C_WRITABLE_REGISTERS;
-
-
-volatile static I2C_REGISTERS    i2c_buffer1;
-volatile static I2C_REGISTERS    i2c_buffer2;
-
-volatile static I2C_REGISTERS*   i2c_dataset1;
-volatile static I2C_REGISTERS*   i2c_dataset2;
-volatile static I2C_REGISTERS*   i2c_datasettmp;
-
-volatile static I2C_WRITABLE_REGISTERS  i2c_writablebuffer1;
-volatile static I2C_WRITABLE_REGISTERS  i2c_writablebuffer2;
-
-volatile static I2C_WRITABLE_REGISTERS* i2c_writabledataset1;
-volatile static I2C_WRITABLE_REGISTERS* i2c_writabledataset2;
-volatile static I2C_WRITABLE_REGISTERS* i2c_writabledatasettmp;
-
-volatile static uint8_t         receivedCommands[MAX_SENT_BYTES];
-volatile static uint8_t         new_command;                        //new command received (!=0)
-
-// one shot management
-static bool oneshot;
-static bool start=false;
-static bool stop =false;
-
-volatile unsigned int count;
-volatile unsigned long antirimb=0;
-
-boolean forcedefault=false;
-
-void countadd()
-{
-  unsigned long now=millis();
-
-  if ((now-antirimb) > DEBOUNCINGTIME){
-    count ++;
-    antirimb=now;
-    //IF_SDEBUG(Serial.print(F("count: ")));IF_SDEBUG(Serial.println(count));
-  }
-}
-
-
-//////////////////////////////////////////////////////////////////////////////////////
-// I2C handlers
-// Handler for requesting data
-//
-void requestEvent()
-{
-  Wire.write(((uint8_t *)i2c_dataset2)+receivedCommands[0],32);
-  //Write up to 32 byte, since master is responsible for reading and sending NACK
-  //32 byte limit is in the Wire library, we have to live with it unless writing our own wire library
-
-  //Serial.print("receivedCommands: ");
-  //Serial.println(receivedCommands[0]);
-  //Serial.println(*((uint8_t *)(i2c_dataset2)+receivedCommands[0]));
-  //Serial.println(*((uint8_t *)(i2c_dataset2)+receivedCommands[0]+1));
-  //Serial.println(*((uint8_t *)(i2c_dataset2)+receivedCommands[0]+2));
-  //Serial.println(*((uint8_t *)(i2c_dataset2)+receivedCommands[0]+3));
-}
-
-//Handler for receiving data
-void receiveEvent( int bytesReceived)
-{
-  uint8_t  *ptr1, *ptr2;
-     //Serial.print("received:");
-     for (int a = 0; a < bytesReceived; a++) {
-          if (a < MAX_SENT_BYTES) {
-               receivedCommands[a] = Wire.read();
-	       //Serial.println(receivedCommands[a]);
-          } else {
-               Wire.read();  // if we receive more data then allowed just throw it away
-          }
-     }
-
-     if (bytesReceived == 2){
-       // check for a command
-       if (receivedCommands[0] == I2C_RAIN_COMMAND) {
-	 //IF_SDEBUG(Serial.print("received command:"));IF_SDEBUG(Serial.println(receivedCommands[1]));
-	 new_command = receivedCommands[1]; return; }
-     }
-
-     if (bytesReceived == 1){
-       //read address for a given register
-       //Addressing over the reg_map fallback to first byte
-       if(bytesReceived == 1 && ( (receivedCommands[0] < 0) || (receivedCommands[0] >= REG_MAP_SIZE))) {
-	 receivedCommands[0]=0;
-       }
-       //IF_SDEBUG(Serial.print("set register:"));IF_SDEBUG(Serial.println(receivedCommands[0]));
-       return;
-     }
-
-     //More than 1 byte was received, so there is definitely some data to write into a register
-     //Check for writeable registers and discard data is it's not writeable
-
-     //IF_SDEBUG(Serial.println("data for write: "));
-     //IF_SDEBUG(Serial.println(receivedCommands[0]));
-     //IF_SDEBUG(Serial.println(receivedCommands[1]));
-     
-     if ((receivedCommands[0]>=I2C_RAIN_MAP_WRITABLE) && (receivedCommands[0] < (I2C_RAIN_MAP_WRITABLE+REG_WRITABLE_MAP_SIZE))) {    
-       if ((receivedCommands[0]+(unsigned int)(bytesReceived-1)) <= (I2C_RAIN_MAP_WRITABLE+REG_WRITABLE_MAP_SIZE)) {
-	 //Writeable registers
-	 // the two buffer should be in sync
-	 ptr1 = (uint8_t *)i2c_writabledataset1+receivedCommands[0]-I2C_RAIN_MAP_WRITABLE;
-	 ptr2 = (uint8_t *)i2c_writabledataset2+receivedCommands[0]-I2C_RAIN_MAP_WRITABLE;
-	 for (int a = 1; a < bytesReceived; a++) { 
-	   //IF_SDEBUG(Serial.print("write in writable buffer:"));IF_SDEBUG(Serial.println(a));IF_SDEBUG(Serial.println(receivedCommands[a]));
-	   *ptr1++ = receivedCommands[a];
-	   *ptr2++ = receivedCommands[a];
-	 }
-	 // new data written
-       }
-    }
-}
-
-/////////////////////////////////////////////////////////////////////////////////////////////////////////
-
+#include "i2c-rain.h"
 
 void setup() {
-
-  /*
-  Nel caso di un chip in standalone senza bootloader, la prima
-  istruzione che è bene mettere nel setup() è sempre la disattivazione
-  del Watchdog stesso: il Watchdog, infatti, resta attivo dopo il
-  reset e, se non disabilitato, esso può provare il reset perpetuo del
-  microcontrollore
-  */
   wdt_disable();
+  TRACE_BEGIN(230400);
 
-  // enable watchdog with timeout to 8s
-  wdt_enable(WDTO_8S);
+  readable_data_read_ptr = &readable_data_1;
+  readable_data_write_ptr = &readable_data_2;
+  writable_data_ptr = &writable_data;
 
-  IF_SDEBUG(Serial.begin(115200));        // connect to the serial port
-  IF_SDEBUG(Serial.print(F("Start firmware version: ")));
-  IF_SDEBUG(Serial.println(VERSION));
+  readable_data_write_ptr->module_type = MODULE_TYPE;
+  readable_data_write_ptr->module_version = MODULE_VERSION;
+  reset_buffers();
+  memcpy((void *) readable_data_read_ptr, (const void*) readable_data_write_ptr, sizeof(readable_data_t));
 
-  // inizialize double buffer
-  i2c_dataset1=&i2c_buffer1;
-  i2c_dataset2=&i2c_buffer2;
+  is_event_tipping_bucket = false;
 
-  // inizialize writable double buffer
-  i2c_writabledataset1=&i2c_writablebuffer1;
-  i2c_writabledataset2=&i2c_writablebuffer2;
+  #if (USE_WDT_TASK)
+  is_event_wdt = false;
+  #endif
 
+  is_event_i2c_receive = false;
+  wdt_timer.value = 0;
 
-  IF_SDEBUG(Serial.println(F("i2c_dataset 1&2 set to 1")));
+  rain_tips_event_occurred_time_ms = 0;
+  ready_tasks_count = 0;
+  i2c_rx_data_length = 0;
 
-  uint8_t *ptr;
-  uint8_t i;
-  //Init to FF i2c_dataset1;
-  ptr = (uint8_t *)i2c_dataset1;
-  for (i=0;i<REG_MAP_SIZE;i++) { *ptr |= 0xFF; ptr++;}
+  pinMode(CONFIGURATION_RESET_PIN, INPUT_PULLUP);
+  load_configuration();
 
-  //Init to FF i2c_dataset1;
-  ptr = (uint8_t *)i2c_dataset2;
-  for (i=0;i<REG_MAP_SIZE;i++) { *ptr |= 0xFF; ptr++;}
+  pinMode(TIPPING_BUCKET_PIN, INPUT_PULLUP);
+  attachInterrupt(digitalPinToInterrupt(TIPPING_BUCKET_PIN), tipping_bucket_interrupt_handler, FALLING);
 
+  Wire.begin(configuration.i2c_address);
+  Wire.setClock(I2C_BUS_CLOCK);
+  Wire.onRequest(i2c_request_interrupt_handler);
+  Wire.onReceive(i2c_receive_interrupt_handler);
 
+  set_sleep_mode(SLEEP_MODE_PWR_DOWN);
+  awakened_event_occurred_time_ms = millis();
 
-  IF_SDEBUG(Serial.println(F("i2c_writabledataset 1&2 set to 1")));
-  //Init to FF i2c_writabledataset1;
-  ptr = (uint8_t *)i2c_writabledataset1;
-  for (i=0;i<REG_WRITABLE_MAP_SIZE;i++) { *ptr |= 0xFF; ptr++;}
+  wdt_init(WDT_TIMER);
 
-  //Init to FF i2c_writabledataset2;
-  ptr = (uint8_t *)i2c_writabledataset2;
-  for (i=0;i<REG_WRITABLE_MAP_SIZE;i++) { *ptr |= 0xFF; ptr++;}
-
-
-  //Set up default parameters
-  i2c_dataset1->status.sw_version          = VERSION;
-  i2c_dataset2->status.sw_version          = VERSION;
-
-
-  pinMode(FORCEDEFAULTPIN, INPUT_PULLUP);
-  pinMode(LEDPIN, OUTPUT); 
-
-  if (digitalRead(FORCEDEFAULTPIN) == LOW) {
-    digitalWrite(LEDPIN, HIGH);
-    forcedefault=true;
-  }
-
-
-  // load configuration saved on eeprom
-  IF_SDEBUG(Serial.println(F("try to load configuration from eeprom")));
-  int p=0;
-  // check for configuration version on eeprom
-  char EE_confver[9];
-  p+=EEPROM_readAnything(p, EE_confver);
-
-  if((strcmp(EE_confver,confver ) == 0) && !forcedefault)
-    {
-      //load writable registers
-      IF_SDEBUG(Serial.println(F("load writable registers from eeprom")));
-      i2c_writabledataset1->load(&p);
-      i2c_writabledataset2->oneshot=i2c_writabledataset1->oneshot;
-      i2c_writabledataset2->i2c_address=i2c_writabledataset1->i2c_address;
-    }
-  else
-    {
-      IF_SDEBUG(Serial.println(F("EEPROM data not useful or set pin activated")));
-      IF_SDEBUG(Serial.println(F("set default values for writable registers")));
-  // set default to oneshot
-  i2c_writabledataset1->oneshot=true;
-  i2c_writabledataset2->oneshot=true;
-      i2c_writabledataset1->i2c_address = I2C_RAIN_DEFAULTADDRESS;
-      i2c_writabledataset2->i2c_address = I2C_RAIN_DEFAULTADDRESS;
-    }
-
-  oneshot=i2c_writabledataset2->oneshot;
-
-  IF_SDEBUG(Serial.print(F("i2c_address: ")));
-  IF_SDEBUG(Serial.println(i2c_writabledataset1->i2c_address));
-  IF_SDEBUG(Serial.print(F("oneshot: ")));
-  IF_SDEBUG(Serial.println(i2c_writabledataset1->oneshot));
-
-  //Start I2C communication routines
-  Wire.begin(i2c_writabledataset1->i2c_address);
-
-  //The Wire library enables the internal pullup resistors for SDA and SCL.
-  //You can turn them off after Wire.begin()
-  // do not need this with patched Wire library
-  //digitalWrite( SDA, LOW);
-  //digitalWrite( SCL, LOW);
-  //digitalWrite( SDA, HIGH);
-  //digitalWrite( SCL, HIGH);
-
-  Wire.onRequest(requestEvent);          // Set up event handlers
-  Wire.onReceive(receiveEvent);
-
-  pinMode(RAINGAUGEPIN,INPUT_PULLUP);  // connected to rain sensor switch
-
-  // initialize counter and fuffer for read
-  count=0;
-  i2c_dataset2->rain.tips=count;
-
-  attachInterrupt(digitalPinToInterrupt(RAINGAUGEPIN), countadd, RISING);
-  //detachInterrupt(digitalPinToInterrupt(RAINGAUGEPIN));
-
-  IF_SDEBUG(Serial.println(F("end setup")));
-
+  state = INIT;
 }
 
 void loop() {
+  switch (state) {
+    case INIT:
+      #if (USE_POWER_DOWN)
+      state = ENTER_POWER_DOWN;
+      #else
+      state = TASKS_EXECUTION;
+      #endif
+      wdt_timer.interrupt_count = WDT_INTERRUPT_COUNT_DEFAULT;
+      break;
 
-  static uint8_t _command;
+    #if (USE_POWER_DOWN)
+    case ENTER_POWER_DOWN:
+      #if (USE_WDT_TO_WAKE_UP_FROM_SLEEP == false)
+      wdt_disable();
+      #endif
 
+      power_down(&awakened_event_occurred_time_ms);
 
-  wdt_reset();
+      #if (USE_WDT_TO_WAKE_UP_FROM_SLEEP == false)
+      wdt_init(WDT_TIMER);
+      #endif
 
-  //IF_SDEBUG(Serial.println("writable buffer exchange"));
-  // disable interrupts for atomic operation
+      state = TASKS_EXECUTION;
+      wdt_timer.interrupt_count = WDT_INTERRUPT_COUNT_DEFAULT;
+      break;
+    #endif
+
+    case TASKS_EXECUTION:
+      if (is_event_tipping_bucket && configuration.is_oneshot && is_oneshot && is_start)
+        tipping_bucket_task();
+
+      #if (USE_WDT_TASK)
+      if (is_event_wdt)
+        wdt_task();
+      #endif
+
+      if (is_event_i2c_receive)
+        i2c_receive_task();
+
+      if (!ready_tasks_count)
+        state = END;
+
+      wdt_timer.interrupt_count = WDT_INTERRUPT_COUNT_DEFAULT;
+      break;
+
+    case END:
+      state = INIT;
+      wdt_timer.interrupt_count = WDT_INTERRUPT_COUNT_DEFAULT;
+      break;
+  }
+}
+
+void print_configuration() {
+  char stima_name[20];
+  getStimaNameByType(stima_name, configuration.module_type);
+  SERIAL_INFO("--> type: %s\r\n", stima_name);
+  SERIAL_INFO("--> version: %d\r\n", configuration.module_version);
+  SERIAL_INFO("--> i2c address: 0x%x (%d)\r\n", configuration.i2c_address, configuration.i2c_address);
+  SERIAL_INFO("--> oneshot: %s\r\n", configuration.is_oneshot ? "on" : "off");
+  SERIAL_INFO("--> continuous: %s\r\n", configuration.is_continuous ? "on" : "off");
+}
+
+void save_configuration(bool is_default) {
+  if (is_default) {
+    SERIAL_INFO("Save default configuration... [ OK ]\r\n");
+    configuration.module_type = MODULE_TYPE;
+    configuration.module_version = MODULE_VERSION;
+    configuration.i2c_address = CONFIGURATION_DEFAULT_I2C_ADDRESS;
+    configuration.is_oneshot = CONFIGURATION_DEFAULT_IS_ONESHOT;
+    configuration.is_continuous = CONFIGURATION_DEFAULT_IS_CONTINUOUS;
+  }
+  else {
+    SERIAL_INFO("Save configuration... [ OK ]\r\n");
+    configuration.i2c_address = writable_data.i2c_address;
+    configuration.is_oneshot = writable_data.is_oneshot;
+    configuration.is_continuous = writable_data.is_continuous;
+  }
+
+  ee_write(&configuration, CONFIGURATION_EEPROM_ADDRESS, sizeof(configuration));
+
+  print_configuration();
+}
+
+void load_configuration() {
+  ee_read(&configuration, CONFIGURATION_EEPROM_ADDRESS, sizeof(configuration));
+
+  if (configuration.module_type != MODULE_TYPE || configuration.module_version != MODULE_VERSION || digitalRead(CONFIGURATION_RESET_PIN) == LOW) {
+    save_configuration(CONFIGURATION_DEFAULT);
+  }
+  else {
+    SERIAL_INFO("Load configuration... [ OK ]\r\n");
+    print_configuration();
+  }
+
+  writable_data.i2c_address = configuration.i2c_address;
+  writable_data.is_oneshot = configuration.is_oneshot;
+}
+
+void tipping_bucket_interrupt_handler() {
+  if (digitalRead(TIPPING_BUCKET_PIN) == LOW) {
+    rain_tips_event_occurred_time_ms = millis();
+    noInterrupts();
+    if (!is_event_tipping_bucket) {
+      is_event_tipping_bucket = true;
+      ready_tasks_count++;
+    }
+    interrupts();
+  }
+}
+
+ISR(WDT_vect) {
+  wdt_timer.interrupt_count--;
+
+  if (wdt_timer.interrupt_count == 0) {
+    wdt_disable();
+    wdt_reset();
+    wdt_enable(WDTO_15MS);
+    while(1);
+  }
+
+  if (wdt_timer.value == WDT_TIMER_MAX_VALUE)
+    wdt_timer.value = 0;
+
+  wdt_timer.value += WDT_OFFSET;
+
+  #if (USE_WDT_TASK)
   noInterrupts();
-  //exchange double buffer
-  i2c_writabledatasettmp=i2c_writabledataset1;
-  i2c_writabledataset1=i2c_writabledataset2;
-  i2c_writabledataset2=i2c_writabledatasettmp;
+  if (!is_event_wdt) {
+    is_event_wdt = true;
+    ready_tasks_count++;
+  }
   interrupts();
+  #endif
+}
 
-  //Check for new incoming command on I2C
-  if (new_command!=0) {
-    _command = new_command;           //save command byte for processing
-    new_command = 0;                  //clear it
-    //_command = _command & 0x0F;     //empty 4MSB bits   
-    switch (_command) {
-    case I2C_RAIN_COMMAND_START:
-      IF_SDEBUG(Serial.println(F("COMMAND: start")));
-      start=true;
-      break;          
-    case I2C_RAIN_COMMAND_STOP:
-      IF_SDEBUG(Serial.println(F("COMMAND: stop")));
-      stop=true;
-      break;
-    case I2C_RAIN_COMMAND_STARTSTOP:
-      IF_SDEBUG(Serial.println(F("COMMAND: startstop")));
-      start=true;
-      stop =true;
-      break;         
+void i2c_request_interrupt_handler() {
+  Wire.write((uint8_t *)readable_data_read_ptr+readable_data_address, readable_data_length);
+}
+
+void i2c_receive_interrupt_handler(int receive_bytes_count) {
+  for (uint8_t i=0; i<receive_bytes_count; i++)
+    i2c_rx_data[i] = Wire.read();
+
+  i2c_rx_data_length = receive_bytes_count;
+
+  noInterrupts();
+  if (!is_event_i2c_receive) {
+    is_event_i2c_receive = true;
+    ready_tasks_count++;
+  }
+  interrupts();
+}
+
+void tipping_bucket_task() {
+  if (millis() - rain_tips_event_occurred_time_ms > DEBOUNCING_TIPPING_BUCKET_TIME_MS) {
+    readable_data_write_ptr->rain.tips_count++;
+    rain_tips_event_occurred_time_ms = millis();
+    // SERIAL_INFO("Rain: %u\r\n", readable_data_write_ptr->rain.tips_count);
+
+    noInterrupts();
+    is_event_tipping_bucket = false;
+    ready_tasks_count--;
+    interrupts();
+  }
+}
+
+#if (USE_WDT_TASK)
+void wdt_task() {
+  noInterrupts();
+  is_event_wdt = false;
+  ready_tasks_count--;
+  interrupts();
+}
+#endif
+
+void i2c_receive_task() {
+  uint8_t i;
+
+  // SERIAL_DEBUG("I2C received %d  bytes: ", i2c_rx_data_length);
+
+  // #if (SERIAL_TRACE_LEVEL == SERIAL_TRACE_LEVEL_DEBUG)
+  // for (i=0; i<i2c_rx_data_length; i++) {
+  //   SERIAL_DEBUG("%x ",i2c_rx_data[i]);
+  // }
+  // #endif
+  // SERIAL_DEBUG("\r\n");
+
+  if (i2c_rx_data_length == 2 && is_readable_register(i2c_rx_data[0])) {
+    readable_data_address = i2c_rx_data[0];
+    readable_data_length = i2c_rx_data[1];
+  }
+  else if (i2c_rx_data_length == 2 && is_command(i2c_rx_data[0])) {
+    exec_command();
+  }
+  else if (is_writable_register(i2c_rx_data[0])) {
+    for (i=1; i<i2c_rx_data_length; i++)
+      ((uint8_t *)writable_data_ptr)[i2c_rx_data[0] - I2C_WRITE_REGISTER_START_ADDRESS] = i2c_rx_data[i];
+  }
+
+  noInterrupts();
+  is_event_i2c_receive = false;
+  ready_tasks_count--;
+  interrupts();
+}
+
+void exchange_buffers() {
+  readable_data_temp_ptr = readable_data_write_ptr;
+  readable_data_write_ptr = readable_data_read_ptr;
+  readable_data_read_ptr = readable_data_temp_ptr;
+}
+
+void reset_buffers() {
+  memset((void *) &readable_data_write_ptr->rain, UINT16_MAX, sizeof(rain_t));
+  readable_data_write_ptr->rain.tips_count = 0;
+}
+
+void exec_command() {
+  #if (SERIAL_TRACE_LEVEL > SERIAL_TRACE_LEVEL_OFF)
+  char buffer[30];
+  #endif
+
+  switch(i2c_rx_data[1]) {
+    case I2C_RAIN_COMMAND_ONESHOT_START:
+    #if (SERIAL_TRACE_LEVEL > SERIAL_TRACE_LEVEL_OFF)
+    strcpy(buffer, "ONESHOT START");
+    #endif
+    is_oneshot = true;
+    is_continuous = false;
+    is_start = true;
+    is_stop = false;
+    commands();
+    break;
+
+    case I2C_RAIN_COMMAND_ONESHOT_STOP:
+    #if (SERIAL_TRACE_LEVEL > SERIAL_TRACE_LEVEL_OFF)
+    strcpy(buffer, "ONESHOT STOP");
+    #endif
+    is_oneshot = true;
+    is_continuous = false;
+    is_start = false;
+    is_stop = true;
+    commands();
+    break;
+
+    case I2C_RAIN_COMMAND_ONESHOT_START_STOP:
+    #if (SERIAL_TRACE_LEVEL > SERIAL_TRACE_LEVEL_OFF)
+    strcpy(buffer, "ONESHOT START-STOP");
+    #endif
+    is_oneshot = true;
+    is_continuous = false;
+    is_start = true;
+    is_stop = true;
+    commands();
+    break;
+
     case I2C_RAIN_COMMAND_SAVE:
-      IF_SDEBUG(Serial.println(F("COMMAND: save")));
-
-      // save configuration to eeprom
-      IF_SDEBUG(Serial.println(F("save configuration to eeprom")));
-      int p=0;
-
-      // save configuration version on eeprom
-      p+=EEPROM_writeAnything(p, confver);
-      //save writable registers
-      i2c_writabledataset2->save(&p);
-
-      break;
-    } //switch  
+    is_oneshot = false;
+    is_continuous = false;
+    is_start = false;
+    is_stop = false;
+    SERIAL_DEBUG("Execute command [ SAVE ]\r\n");
+    save_configuration(CONFIGURATION_CURRENT);
+    break;
   }
 
-  //IF_SDEBUG(Serial.print(F("oneshot status: ")));IF_SDEBUG(Serial.println(oneshot));
-  //IF_SDEBUG(Serial.print(F("oneshot start : ")));IF_SDEBUG(Serial.println(start));
-  //IF_SDEBUG(Serial.print(F("oneshot stop  : ")));IF_SDEBUG(Serial.println(stop));
+  #if (SERIAL_TRACE_LEVEL > SERIAL_TRACE_LEVEL_OFF)
+  if (configuration.is_oneshot == is_oneshot || configuration.is_continuous == is_continuous) {
+    SERIAL_DEBUG("Execute [ %s ]\r\n", buffer);
+  }
+  else if (configuration.is_oneshot == is_continuous || configuration.is_continuous == is_oneshot) {
+    SERIAL_DEBUG("Ignore [ %s ]\r\n", buffer);
+  }
+  #endif
+}
 
+void commands() {
+  noInterrupts();
 
-
-  //IF_SDEBUG(Serial.print(F("count: ")));IF_SDEBUG(Serial.println(count));
-
-  if (oneshot) {
-
-    if (start || stop) {
-      // disable interrupts for atomic operation
-      noInterrupts();
-    }
-    
-    if (stop) {
-
-      //update the last data
-      i2c_dataset1->rain.tips=count;
-      
-      //exchange double buffer
-      i2c_datasettmp=i2c_dataset1;
-      i2c_dataset1=i2c_dataset2;
-      i2c_dataset2=i2c_datasettmp;
-    }
-
-    if (start) {
-      count=0;
-      i2c_dataset1->rain.tips=count;
-    }
-      
-    if (start || stop) {
-      // new data published
-      interrupts();
-    }
-
-    //IF_SDEBUG(Serial.println(F("oneshot end")));
-    stop =false;
-    start=false;
-
+  if (configuration.is_oneshot && is_oneshot && is_stop) {
+    SERIAL_INFO("Total rain : %u\r\n", readable_data_write_ptr->rain.tips_count);
+    exchange_buffers();
   }
 
-  digitalWrite(LEDPIN,count % 2);  // blink Led
+  if (configuration.is_oneshot && is_oneshot && is_start) {
+    reset_buffers();
+  }
+  else if (is_start) {
+    reset_buffers();
+    exchange_buffers();
+  }
 
-}  
+  interrupts();
+}

@@ -17,31 +17,12 @@ You should have received a copy of the GNU General Public License
 along with this program.  If not, see <http://www.gnu.org/licenses/>.
 **********************************************************************/
 
-#ifndef _HYT271_H
-#define _HYT271_H
+#ifndef _HARDWARE_CONFIG_H
+#define _HARDWARE_CONFIG_H
 
-#include "Arduino.h"
-#include <Wire.h>
+#define I2C_BUS_CLOCK                   (50000L)
+#define I2C_MAX_DATA_LENGTH             (32)
+#define DEBOUNCING_POWER_DOWN_TIME_MS   (10)
 
-#define HYT271_DEFAULT_ADDRESS      (0x28)
-#define HYT271_READ_HT_DATA_LENGTH  (4)
-#define HYT271_ENTER_COMMAND_MODE   (0xA0)
-#define HYT271_EXIT_COMMAND_MODE    (0x80)
-#define HYT271_WRITE_ADDRESS        (0x5C)
-#define HYT271_CONVERSION_TIME_MS   (100)
-#define HYT271_TEMPERATURE_MIN      (-40)
-#define HYT271_TEMPERATURE_MAX      (125)
-#define HYT271_HUMIDITY_MIN         (0)
-#define HYT271_HUMIDITY_MAX         (100)
-
-namespace Hyt271 {
-  void init(uint8_t);
-  void on(uint8_t);
-  void off(uint8_t);
-  void changeAddress(uint8_t, int8_t, int8_t);
-  uint32_t initRead(uint8_t);
-  bool read(int8_t, float *, float *);
-  void send(int8_t, uint8_t, uint8_t, uint8_t);
-};
 
 #endif

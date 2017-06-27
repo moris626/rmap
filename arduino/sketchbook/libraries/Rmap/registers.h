@@ -17,31 +17,16 @@ You should have received a copy of the GNU General Public License
 along with this program.  If not, see <http://www.gnu.org/licenses/>.
 **********************************************************************/
 
-#ifndef _HYT271_H
-#define _HYT271_H
+#define I2C_READ_REGISTER_START_ADDRESS     (0x00)
+#define I2C_READ_REGISTER_END_ADDRESS       (0x1E)
 
-#include "Arduino.h"
-#include <Wire.h>
+#define I2C_WRITE_REGISTER_START_ADDRESS    (0x1F)
+#define I2C_WRITE_REGISTER_END_ADDRESS      (0xFE)
 
-#define HYT271_DEFAULT_ADDRESS      (0x28)
-#define HYT271_READ_HT_DATA_LENGTH  (4)
-#define HYT271_ENTER_COMMAND_MODE   (0xA0)
-#define HYT271_EXIT_COMMAND_MODE    (0x80)
-#define HYT271_WRITE_ADDRESS        (0x5C)
-#define HYT271_CONVERSION_TIME_MS   (100)
-#define HYT271_TEMPERATURE_MIN      (-40)
-#define HYT271_TEMPERATURE_MAX      (125)
-#define HYT271_HUMIDITY_MIN         (0)
-#define HYT271_HUMIDITY_MAX         (100)
+#define I2C_COMMAND_ID                      (0xFF)
 
-namespace Hyt271 {
-  void init(uint8_t);
-  void on(uint8_t);
-  void off(uint8_t);
-  void changeAddress(uint8_t, int8_t, int8_t);
-  uint32_t initRead(uint8_t);
-  bool read(int8_t, float *, float *);
-  void send(int8_t, uint8_t, uint8_t, uint8_t);
-};
+#define MISS_INT_VALUE                      (0xFFFF)
 
-#endif
+#define is_readable_register(register)      (register <= I2C_READ_REGISTER_END_ADDRESS)
+#define is_writable_register(register)      (I2C_WRITE_REGISTER_START_ADDRESS <= register && register <= I2C_WRITE_REGISTER_END_ADDRESS)
+#define is_command(value)                   (value == I2C_COMMAND_ID)
