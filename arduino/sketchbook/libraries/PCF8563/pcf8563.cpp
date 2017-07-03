@@ -500,7 +500,7 @@ namespace Pcf8563 {
     seconds_since_1970 = getDaysFromTwoDate(1, 1, 1970, day, month, year+2000) * 86400UL;
     seconds_since_1970 += hours * 3600UL;
     seconds_since_1970 += minutes * 60UL;
-    seconds_since_1970 += seconds + 1;
+    seconds_since_1970 += seconds;
 
     return seconds_since_1970;
   }
