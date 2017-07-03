@@ -47,6 +47,8 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 */
 #define W5500_CHIP_SELECT_PIN                       (8)
 
+#define W5500_RESET_PIN                             (4)
+
 #define SDCARD_CHIP_SELECT_PIN                      (7)
 
 /*!
@@ -56,10 +58,10 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #define NTP_RETRY_MAX_COUNT                         (5)
 
 /*!
-  \def NTP_RETRY_MS
+  \def NTP_RETRY_DELAY_MS
   Delay for retry for get time from NTP server
 */
-#define NTP_RETRY_MS                                (2000)
+#define NTP_RETRY_DELAY_MS                          (100)
 #endif
 
 #if (MODULE_TYPE == STIMA_MODULE_TYPE_SAMPLE_GSM || MODULE_TYPE == STIMA_MODULE_TYPE_REPORT_GSM)
@@ -242,7 +244,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
  *********************************************************************/
 #define VALUES_TO_READ_FROM_SENSOR_COUNT            (2)
 #define SENSORS_RETRY_COUNT_MAX                     (5)
-#define SENSORS_RETRY_DELAY_MS                      (200)
+#define SENSORS_RETRY_DELAY_MS                      (50)
 
 #define USE_SENSORS_COUNT                           (USE_SENSOR_ITH + USE_SENSOR_MTH + USE_SENSOR_NTH + USE_SENSOR_XTH + USE_SENSOR_TBS + USE_SENSOR_TBR)
 

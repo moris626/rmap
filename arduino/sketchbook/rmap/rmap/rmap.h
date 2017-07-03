@@ -153,7 +153,7 @@ typedef enum {
   SET_SYNC_PROVIDER,
   SET_RTC_TIME,
   END_TIME,
-  WAIT_FOR_RETRY
+  WAIT_FOR_NTP_RETRY
 } time_state_t;
 
 /**********************************************************************
@@ -225,12 +225,6 @@ volatile uint8_t ready_tasks_count;
 */
 uint32_t awakened_event_occurred_time_ms;
 
-/*!
-  \var time_retry_event_occurred_ms
-  ms delay for retry state in time task.
-*/
-uint32_t time_retry_event_occurred_ms;
-
 #if (MODULE_TYPE == STIMA_MODULE_TYPE_SAMPLE_ETH || MODULE_TYPE == STIMA_MODULE_TYPE_REPORT_ETH)
 uint32_t ethernet_task_attempt_occurred_time_ms;
 EthernetUDP ethernetUdpClient;
@@ -262,7 +256,13 @@ value_t temperature;
 value_t humidity;
 rain_t rain;
 
-int8_t next_minute_for_sensor_reading;
+uint8_t next_hour_for_sensor_reading;
+uint8_t next_minute_for_sensor_reading;
+uint8_t sensor_reading_day;
+uint8_t sensor_reading_month;
+uint16_t sensor_reading_year;
+uint8_t sensor_reading_hour;
+uint8_t sensor_reading_minute;
 
 time_state_t time_state;
 sensor_state_t sensor_state;
@@ -270,6 +270,14 @@ sensor_state_t sensor_state;
 /**********************************************************************
  * FUNCTIONS
  *********************************************************************/
+void init_systems(void);
+void init_buffers(void);
+void init_tasks(void);
+void init_pins(void);
+void init_wire(void);
+void init_spi(void);
+void init_rtc(void);
+void init_sensors(void);
 
 /*! \fn void print_configuration(void)
  *  \brief Print configuration.
@@ -292,8 +300,7 @@ void save_configuration(bool);
 
 void init_sensors(void);
 
-void setNextMinuteForSensorReading(int8_t *);
-void checkIfisTimeForSensorReading(void);
+void setNextTimeForSensorReading(uint8_t *, uint8_t *);
 
 /**********************************************************************
  * TASKS

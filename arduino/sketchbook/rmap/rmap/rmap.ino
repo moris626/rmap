@@ -36,75 +36,21 @@ Debug level for sketch and library.
 #include "rmap.h"
 
 void setup() {
-  wdt_disable();
-  TRACE_BEGIN(230400);
-
-  readable_data_read_ptr = &readable_data_1;
-  readable_data_write_ptr = &readable_data_2;
-  writable_data_ptr = &writable_data;
-
-  readable_data_write_ptr->module_type = MODULE_TYPE;
-  readable_data_write_ptr->module_version = MODULE_VERSION;
-  memcpy((void *) readable_data_read_ptr, (const void*) readable_data_write_ptr, sizeof(readable_data_t));
-
-  is_event_sensors_reading = false;
-
-  #if (USE_WDT_TASK)
-  is_event_wdt = false;
-  #endif
-
-  #if (USE_RTC_TASK)
-  is_event_rtc = false;
-  #endif
-
-  wdt_timer.value = 0;
-  ready_tasks_count = 0;
-
-  pinMode(CONFIGURATION_RESET_PIN, INPUT_PULLUP);
-  load_configuration();
-
-  pinMode(RTC_INTERRUPT_PIN, INPUT_PULLUP);
-  attachInterrupt(digitalPinToInterrupt(RTC_INTERRUPT_PIN), rtc_interrupt_handler, FALLING);
-
-  pinMode(SDCARD_CHIP_SELECT_PIN, OUTPUT);
-  digitalWrite(SDCARD_CHIP_SELECT_PIN, HIGH);
-
-  #if (MODULE_TYPE == STIMA_MODULE_TYPE_SAMPLE_ETH || MODULE_TYPE == STIMA_MODULE_TYPE_REPORT_ETH)
-  Ethernet.w5500_cspin = W5500_CHIP_SELECT_PIN;
-  ethernet_task_attempt_occurred_time_ms = ETHERNET_ATTEMP_MS+1;
-  is_event_ethernet = true;
-  ready_tasks_count++;
-  SPI.begin();
-  #endif
-
-  next_minute_for_sensor_reading = -1;
-  is_event_time = false;
-  time_state = INIT_TIME;
-
-  Wire.begin();
-  Wire.setClock(I2C_BUS_CLOCK);
-
-  init_sensors();
-
-  Pcf8563::disableAlarm();
-  Pcf8563::disableTimer();
-
-  set_sleep_mode(SLEEP_MODE_PWR_DOWN);
-  awakened_event_occurred_time_ms = millis();
-
-  wdt_init(WDT_TIMER);
-
-  state = INIT;
+  init_system();
 }
 
 void loop() {
   switch (state) {
     case INIT:
-      #if (USE_POWER_DOWN)
-      state = ENTER_POWER_DOWN;
-      #else
+      init_buffers();
+      init_tasks();
+      init_pins();
+      load_configuration();
+      init_wire();
+      init_spi();
+      init_rtc();
+      init_sensors();
       state = TASKS_EXECUTION;
-      #endif
       wdt_timer.interrupt_count = WDT_INTERRUPT_COUNT_DEFAULT;
     break;
 
@@ -154,10 +100,97 @@ void loop() {
       break;
 
     case END:
-      state = INIT;
+      #if (USE_POWER_DOWN)
+      state = ENTER_POWER_DOWN;
+      #else
+      state = TASKS_EXECUTION;
+      #endif
       wdt_timer.interrupt_count = WDT_INTERRUPT_COUNT_DEFAULT;
       break;
   }
+}
+
+void init_buffers() {
+  readable_data_read_ptr = &readable_data_1;
+  readable_data_write_ptr = &readable_data_2;
+  writable_data_ptr = &writable_data;
+
+  readable_data_write_ptr->module_type = MODULE_TYPE;
+  readable_data_write_ptr->module_version = MODULE_VERSION;
+  memcpy((void *) readable_data_read_ptr, (const void*) readable_data_write_ptr, sizeof(readable_data_t));
+}
+
+void init_tasks() {
+  noInterrupts();
+  ready_tasks_count = 0;
+
+  is_event_sensors_reading = false;
+  is_event_time = false;
+
+  #if (USE_WDT_TASK)
+  is_event_wdt = false;
+  #endif
+
+  #if (USE_RTC_TASK)
+  is_event_rtc = false;
+  #endif
+
+  #if (MODULE_TYPE == STIMA_MODULE_TYPE_SAMPLE_ETH || MODULE_TYPE == STIMA_MODULE_TYPE_REPORT_ETH)
+  is_event_ethernet = true;
+  ready_tasks_count++;
+  #endif
+
+  #if (MODULE_TYPE == STIMA_MODULE_TYPE_SAMPLE_ETH || MODULE_TYPE == STIMA_MODULE_TYPE_REPORT_ETH)
+  ethernet_task_attempt_occurred_time_ms = ETHERNET_ATTEMP_MS+1;
+  #endif
+
+  next_minute_for_sensor_reading = 255;
+  time_state = INIT_TIME;
+
+  interrupts();
+}
+
+void init_pins() {
+  pinMode(CONFIGURATION_RESET_PIN, INPUT_PULLUP);
+
+  pinMode(RTC_INTERRUPT_PIN, INPUT_PULLUP);
+  attachInterrupt(digitalPinToInterrupt(RTC_INTERRUPT_PIN), rtc_interrupt_handler, FALLING);
+
+  pinMode(SDCARD_CHIP_SELECT_PIN, OUTPUT);
+  digitalWrite(SDCARD_CHIP_SELECT_PIN, HIGH);
+
+  #if (MODULE_TYPE == STIMA_MODULE_TYPE_SAMPLE_ETH || MODULE_TYPE == STIMA_MODULE_TYPE_REPORT_ETH)
+  Ethernet.w5500_cspin = W5500_CHIP_SELECT_PIN;
+  #endif
+}
+
+void init_wire() {
+  Wire.begin();
+  Wire.setClock(I2C_BUS_CLOCK);
+  digitalWrite(SDA, LOW);
+  digitalWrite(SCL, LOW);
+}
+
+void init_spi() {
+  #if (MODULE_TYPE == STIMA_MODULE_TYPE_SAMPLE_ETH || MODULE_TYPE == STIMA_MODULE_TYPE_REPORT_ETH)
+  SPI.begin();
+  #endif
+}
+
+void init_rtc() {
+  Pcf8563::disableAlarm();
+  Pcf8563::disableTimer();
+}
+
+void init_system() {
+  wdt_disable();
+  TRACE_BEGIN(230400);
+  wdt_timer.value = 0;
+  wdt_timer.interrupt_count = WDT_INTERRUPT_COUNT_DEFAULT;
+  set_sleep_mode(SLEEP_MODE_PWR_DOWN);
+  awakened_event_occurred_time_ms = millis();
+  wdt_init(WDT_TIMER);
+  state = INIT;
 }
 
 void print_configuration() {
@@ -263,7 +296,17 @@ void init_sensors () {
   is_first_run = true;
   sensors_count = 0;
 
-  SERIAL_INFO("Sensors: [ OK ]\r\n");
+  SERIAL_INFO("Sensors...\r\n");
+
+  #if (USE_SENSOR_TBS)
+  SensorDriver::createAndSetup(SENSOR_DRIVER_I2C, SENSOR_TYPE_TBS, &is_sensors_rain_setted, &is_sensors_rain_prepared, configuration.i2c_rain_address, sensors, &sensors_count);
+  SERIAL_INFO("--> %u: %s-%s\r\n", sensors_count, SENSOR_DRIVER_I2C, SENSOR_TYPE_TBS);
+  #endif
+
+  #if (USE_SENSOR_TBR)
+  SensorDriver::createAndSetup(SENSOR_DRIVER_I2C, SENSOR_TYPE_TBR, &is_sensors_rain_setted, &is_sensors_rain_prepared, configuration.i2c_rain_address, sensors, &sensors_count);
+  SERIAL_INFO("--> %u: %s-%s\r\n", sensors_count, SENSOR_DRIVER_I2C, SENSOR_TYPE_TBR);
+  #endif
 
   #if (USE_SENSOR_ITH)
   SensorDriver::createAndSetup(SENSOR_DRIVER_I2C, SENSOR_TYPE_ITH, &is_sensors_th_setted, &is_sensors_th_prepared, configuration.i2c_th_address, sensors, &sensors_count);
@@ -285,20 +328,7 @@ void init_sensors () {
   SERIAL_INFO("--> %u: %s-%s\r\n", sensors_count, SENSOR_DRIVER_I2C, SENSOR_TYPE_XTH);
   #endif
 
-  #if (USE_SENSOR_TBS)
-  SensorDriver::createAndSetup(SENSOR_DRIVER_I2C, SENSOR_TYPE_TBS, &is_sensors_rain_setted, &is_sensors_rain_prepared, configuration.i2c_rain_address, sensors, &sensors_count);
-  SERIAL_INFO("--> %u: %s-%s\r\n", sensors_count, SENSOR_DRIVER_I2C, SENSOR_TYPE_TBS);
-  #endif
-
-  #if (USE_SENSOR_TBR)
-  SensorDriver::createAndSetup(SENSOR_DRIVER_I2C, SENSOR_TYPE_TBR, &is_sensors_rain_setted, &is_sensors_rain_prepared, configuration.i2c_rain_address, sensors, &sensors_count);
-  SERIAL_INFO("--> %u: %s-%s\r\n", sensors_count, SENSOR_DRIVER_I2C, SENSOR_TYPE_TBR);
-  #endif
-
   SERIAL_INFO("\r\n");
-
-  SERIAL_INFO("--> observations every %u minutes\r\n", OBSERVATIONS_MINUTES);
-  SERIAL_INFO("--> report every %u minutes\r\n\r\n", REPORT_MINUTES);
 }
 
 void rtc_interrupt_handler() {
@@ -316,6 +346,7 @@ ISR(WDT_vect) {
   wdt_timer.interrupt_count--;
 
   if (wdt_timer.interrupt_count == 0) {
+    digitalWrite(W5500_RESET_PIN, LOW);
     wdt_disable();
     wdt_reset();
     wdt_enable(WDTO_15MS);
@@ -346,99 +377,101 @@ void wdt_task() {
 }
 #endif
 
-void checkIfisTimeForSensorReading() {
-  if (minute() >= next_minute_for_sensor_reading) {
-    SERIAL_DEBUG("Doing sensor reading...\r\n");
-    setNextMinuteForSensorReading(&next_minute_for_sensor_reading);
-    sensor_state = INIT_SENSOR;
-    noInterrupts();
-    if (!is_event_sensors_reading) {
-      is_event_sensors_reading = true;
-      ready_tasks_count++;
-    }
-    interrupts();
-  }
-}
-
 #if (USE_RTC_TASK)
 void rtc_task() {
 
-  if (Pcf8563::isAlarmActive()) {
-    // SERIAL_INFO("RTC Alarm Task!!!! %02u:%02u:%02u\r\n", hour(), minute(), second());
+  if (Pcf8563::isAlarmActive())
     Pcf8563::disableAlarm();
-    Pcf8563::enableTimer();
-    checkIfisTimeForSensorReading();
-    SERIAL_INFO("T-IST\tT-MIN\tT-MED\tT-MAX\tH-IST\tH-MIN\tH-MED\tH-MAX\tR-TPS\r\n");
-  }
 
-  if (Pcf8563::isTimerActive()) {
-    // SERIAL_INFO("RTC Timer Task!!!! %02u:%02u:%02u\r\n", hour(), minute(), second());
+  if (Pcf8563::isTimerActive())
     Pcf8563::resetTimer();
-    checkIfisTimeForSensorReading();
-  }
 
-  noInterrupts();
-  is_event_rtc = false;
-  ready_tasks_count--;
-  interrupts();
+  if (second() == 0) {
+    Pcf8563::enableTimer();
+
+    if (minute() == next_minute_for_sensor_reading) {
+      SERIAL_DEBUG("Doing sensor reading...\r\n");
+      sensor_reading_day = day();
+      sensor_reading_month = month();
+      sensor_reading_year = year(),
+      sensor_reading_hour = hour();
+      sensor_reading_minute = minute();
+
+      sensor_state = INIT_SENSOR;
+
+      noInterrupts();
+      if (!is_event_sensors_reading) {
+        is_event_sensors_reading = true;
+        ready_tasks_count++;
+      }
+      interrupts();
+    }
+
+    setNextTimeForSensorReading(&next_hour_for_sensor_reading, &next_minute_for_sensor_reading);
+
+    noInterrupts();
+    is_event_rtc = false;
+    ready_tasks_count--;
+    interrupts();
+  }
 }
 #endif
 
 void time_task() {
   static uint8_t retry;
-  static time_state_t retry_state;
+  static time_state_t state_after_wait;
+  static uint32_t delay_ms;
+  static uint32_t start_time_ms;
 
   switch (time_state) {
     case INIT_TIME:
       retry = 0;
-      retry_state = INIT_TIME;
-      // o settato troppo tempo fa....
-      if (timeStatus() != timeSet) {
-        time_state = SEND_REQUEST;
-      }
+      state_after_wait = INIT_TIME;
+      time_state = SEND_REQUEST;
       break;
 
     case SEND_REQUEST:
       #if (MODULE_TYPE == STIMA_MODULE_TYPE_SAMPLE_ETH || MODULE_TYPE == STIMA_MODULE_TYPE_REPORT_ETH)
-      // while (ethernetUdpClient.parsePacket() > 0);
-      if (Ntp::sendRequest(&ethernetUdpClient, configuration.ntp_server) && retry < NTP_RETRY_MAX_COUNT) {
+      //while (ethernetUdpClient.parsePacket() > 0);
+      // success
+      if (Ntp::sendRequest(&ethernetUdpClient, configuration.ntp_server)) {
         retry = 0;
         time_state = WAIT_RESPONSE;
       }
-      else if (retry > NTP_RETRY_MAX_COUNT)
-        time_state = END_TIME;
-      else {
-        retry++;
-        time_retry_event_occurred_ms = millis();
-        retry_state = SEND_REQUEST;
-        time_state = WAIT_FOR_RETRY;
+      // retry
+      else if (++retry < NTP_RETRY_MAX_COUNT) {
+        delay_ms = NTP_RETRY_DELAY_MS;
+        start_time_ms = millis();
+        state_after_wait = SEND_REQUEST;
+        time_state = WAIT_FOR_NTP_RETRY;
       }
+      // fail
+      else time_state = END_TIME;
       #endif
-
       break;
 
     case WAIT_RESPONSE:
       #if (MODULE_TYPE == STIMA_MODULE_TYPE_SAMPLE_ETH || MODULE_TYPE == STIMA_MODULE_TYPE_REPORT_ETH)
-      if (Ntp::getResponse(&ethernetUdpClient) && retry < NTP_RETRY_MAX_COUNT) {
-        retry = 0;
+      // success
+      if (Ntp::getResponse(&ethernetUdpClient)) {
         time_state = SET_SYNC_PROVIDER;
       }
-      else if (retry > NTP_RETRY_MAX_COUNT)
-        time_state = END_TIME;
-      else {
-        retry++;
-        time_retry_event_occurred_ms = millis();
-        retry_state = WAIT_RESPONSE;
-        time_state = WAIT_FOR_RETRY;
+      // retry
+      else if (++retry < NTP_RETRY_MAX_COUNT) {
+        delay_ms = NTP_RETRY_DELAY_MS;
+        start_time_ms = millis();
+        state_after_wait = WAIT_RESPONSE;
+        time_state = WAIT_FOR_NTP_RETRY;
       }
+      // fail
+      else time_state = END_TIME;
       #endif
-
       break;
 
     case SET_SYNC_PROVIDER:
       #if (MODULE_TYPE == STIMA_MODULE_TYPE_SAMPLE_ETH || MODULE_TYPE == STIMA_MODULE_TYPE_REPORT_ETH)
       setSyncProvider(Ntp::getTime);
-      SERIAL_DEBUG("Current NTP date and time: %02u/%02u/%04u %02u:%02u:%02u\r\n\r\n", day(), month(), year(), hour(), minute(), second());
+      SERIAL_DEBUG("Current NTP date and time: %02u/%02u/%04u %02u:%02u:%02u\r\n", day(), month(), year(), hour(), minute(), second());
       #endif
 
       time_state = SET_RTC_TIME;
@@ -448,17 +481,24 @@ void time_task() {
       Pcf8563::reset();
       Pcf8563::setDate(day(), month(), year()-2000, weekday()-1, 0);
       Pcf8563::setTime(hour(), minute(), second());
-      SERIAL_DEBUG("Current RTC date and time: %02u/%02u/%04u %02u:%02u:%02u\r\n\r\n", day(), month(), year(), hour(), minute(), second());
+      SERIAL_DEBUG("Current RTC date and time: %02u/%02u/%04u %02u:%02u:%02u\r\n", day(), month(), year(), hour(), minute(), second());
       time_state = END_TIME;
       break;
 
     case END_TIME:
       setSyncProvider(Pcf8563::getTime);
-      SERIAL_INFO("Now is: %02u/%02u/%04u %02u:%02u:%02u\r\n", day(), month(), year(), hour(), minute(), second());
-      SERIAL_INFO("Wait time with seconds = 00\r\n\r\n");
-      Pcf8563::setAlarm(PCF8563_ALARM_DISABLE, minute()+1); // sync sul minuto
+      setNextTimeForSensorReading(&next_hour_for_sensor_reading, &next_minute_for_sensor_reading);
+      Pcf8563::setAlarm(PCF8563_ALARM_DISABLE, next_minute_for_sensor_reading);
       Pcf8563::enableAlarm();
       Pcf8563::setTimer(RTC_FREQUENCY, RTC_TIMER);
+
+      SERIAL_INFO("Current date and time is: %02u/%02u/%04u %02u:%02u:%02u\r\n\r\n", day(), month(), year(), hour(), minute(), second());
+
+      SERIAL_INFO("Acquisition scheduling...\r\n");
+      SERIAL_INFO("--> observations every %u minutes\r\n", OBSERVATIONS_MINUTES);
+      SERIAL_INFO("--> report every %u minutes\r\n", REPORT_MINUTES);
+      SERIAL_INFO("--> starting at: %02u:%02u:00\r\n\r\n", next_hour_for_sensor_reading, next_minute_for_sensor_reading);
+
       noInterrupts();
       is_event_time = false;
       ready_tasks_count--;
@@ -467,33 +507,39 @@ void time_task() {
       time_state = INIT_TIME;
       break;
 
-    case WAIT_FOR_RETRY:
-      if (millis() - time_retry_event_occurred_ms > NTP_RETRY_MS) {
-        time_state = retry_state;
-        SERIAL_DEBUG("Time retry %u %u\r\n", retry, retry_state);
+    case WAIT_FOR_NTP_RETRY:
+      if (millis() - start_time_ms > delay_ms) {
+        time_state = state_after_wait;
       }
       break;
   }
 }
 
-void setNextMinuteForSensorReading (int8_t *next_minute) {
-  uint8_t next_hour = hour();
+void setNextTimeForSensorReading (uint8_t *next_hour, uint8_t *next_minute) {
+  bool is_update = false;
+  *next_hour = hour();
 
-  if (*next_minute < 0) {
+  if (*next_minute == 255) {
     *next_minute = minute();
     *next_minute = *next_minute - (*next_minute % REPORT_MINUTES) + REPORT_MINUTES;
+    is_update = true;
   }
-  else *next_minute += REPORT_MINUTES;
-
-  if (*next_minute > 59) {
-    *next_minute -= 60;
-    next_hour++;
+  else if (minute() == *next_minute) {
+    *next_minute += REPORT_MINUTES;
+    is_update = true;
   }
 
-  if (next_hour > 23)
-    next_hour -= 24;
+  if (is_update) {
+    if (*next_minute > 59) {
+      *next_minute -= 60;
+      (*next_hour)++;
+    }
 
-  SERIAL_DEBUG("Next acquisition scheduled at: %02u:%02u:00\r\n", next_hour, *next_minute);
+    if (*next_hour > 23)
+      *next_hour = *next_hour - 24;
+
+    SERIAL_DEBUG("Next acquisition scheduled at: %02u:%02u:00\r\n", *next_hour, *next_minute);
+  }
 }
 
 #if (MODULE_TYPE == STIMA_MODULE_TYPE_SAMPLE_ETH || MODULE_TYPE == STIMA_MODULE_TYPE_REPORT_ETH)
@@ -544,9 +590,9 @@ void ethernet_task() {
 
       noInterrupts();
       is_event_ethernet = false;
-      // ready_tasks_count--;
+      ready_tasks_count--;
       is_event_time = true;
-      // ready_tasks_count++;
+      ready_tasks_count++;
       interrupts();
     }
   }
@@ -558,16 +604,20 @@ void sensors_reading_task () {
   static uint8_t retry;
   static sensor_state_t state_after_wait;
   static uint32_t delay_ms;
-  static uint32_t sensors_start_time_ms;
+  static uint32_t start_time_ms;
   static int32_t values_readed_from_sensor[2];
 
   switch (sensor_state) {
     case INIT_SENSOR:
+      for (i=0; i<sensors_count; i++)
+        sensors[i]->resetPrepared();
+
       i = 0;
       retry = 0;
       memset(&temperature, UINT16_MAX, sizeof(value_t));
       memset(&humidity, UINT16_MAX, sizeof(value_t));
       memset(&rain, UINT16_MAX, sizeof(rain_t));
+
       state_after_wait = INIT_SENSOR;
       sensor_state = PREPARE_SENSOR;
       break;
@@ -575,7 +625,7 @@ void sensors_reading_task () {
     case PREPARE_SENSOR:
       sensors[i]->prepare();
       delay_ms = sensors[i]->getDelay();
-      sensors_start_time_ms = sensors[i]->getStartTime();
+      start_time_ms = sensors[i]->getStartTime();
       state_after_wait = IS_SENSOR_PREPARED;
       sensor_state = WAIT_STATE;
       break;
@@ -586,9 +636,9 @@ void sensors_reading_task () {
         sensor_state = GET_SENSOR;
       }
       // retry
-      else if (++retry < SENSORS_RETRY_COUNT_MAX) {
+      else if ((++retry) < SENSORS_RETRY_COUNT_MAX) {
         delay_ms = SENSORS_RETRY_DELAY_MS;
-        sensors_start_time_ms = millis();
+        start_time_ms = millis();
         state_after_wait = PREPARE_SENSOR;
         sensor_state = WAIT_STATE;
       }
@@ -599,7 +649,7 @@ void sensors_reading_task () {
     case GET_SENSOR:
       sensors[i]->get(values_readed_from_sensor, VALUES_TO_READ_FROM_SENSOR_COUNT);
       delay_ms = sensors[i]->getDelay();
-      sensors_start_time_ms = sensors[i]->getStartTime();
+      start_time_ms = sensors[i]->getStartTime();
       state_after_wait = IS_SENSOR_GETTED;
       sensor_state = WAIT_STATE;
       break;
@@ -614,16 +664,14 @@ void sensors_reading_task () {
         sensor_state = GET_SENSOR;
       }
       // retry
-      else if (++retry < SENSORS_RETRY_COUNT_MAX) {
+      else if ((++retry) < SENSORS_RETRY_COUNT_MAX) {
         delay_ms = SENSORS_RETRY_DELAY_MS;
-        sensors_start_time_ms = millis();
-        state_after_wait = PREPARE_SENSOR;
+        start_time_ms = millis();
+        state_after_wait = GET_SENSOR;
         sensor_state = WAIT_STATE;
       }
       // fail
-      else {
-        sensor_state = END_SENSOR_READING;
-      }
+      else sensor_state = END_SENSOR_READING;
       break;
 
     case READ_SENSOR:
@@ -663,7 +711,7 @@ void sensors_reading_task () {
       #endif
 
       #if (USE_SENSOR_TBS || USE_SENSOR_TBR)
-      if (strcmp(sensors[i]->getType(), SENSOR_TYPE_TBS) == 0 || strcmp(sensors[i]->getType(), SENSOR_TYPE_TBR) == 0) {
+      if ((strcmp(sensors[i]->getType(), SENSOR_TYPE_TBS) == 0) || (strcmp(sensors[i]->getType(), SENSOR_TYPE_TBR) == 0)) {
         rain.tips_count = values_readed_from_sensor[0];
       }
       #endif
@@ -672,17 +720,25 @@ void sensors_reading_task () {
 
     case END_SENSOR_READING:
       // next sensor
-      if (++i < sensors_count) {
+      if ((++i) < sensors_count) {
         retry = 0;
+        // delay_ms = 0;
+        // start_time_ms = millis();
+        // state_after_wait = PREPARE_SENSOR;
+        // sensor_state = WAIT_STATE;
         sensor_state = PREPARE_SENSOR;
       }
       // end
       else {
-        for (i=0; i<sensors_count; i++)
-          sensors[i]->resetPrepared();
+        if (is_first_run) {
+          SERIAL_INFO("DATE      \tTIME    \tT-IST\tT-MIN\tT-MED\tT-MAX\tH-IST\tH-MIN\tH-MED\tH-MAX\tR-TPS\r\n");
+          is_first_run = false;
+        }
+        else {
+          #if (SERIAL_TRACE_LEVEL >= SERIAL_TRACE_LEVEL_INFO)
+          SERIAL_INFO("%02u/%02u/%04u\t", sensor_reading_day, sensor_reading_month, sensor_reading_year);
+          SERIAL_INFO("%02u:%02u:00\t", sensor_reading_hour, sensor_reading_minute);
 
-        if (!is_first_run) {
-          #if (SERIAL_TRACE_LEVEL == SERIAL_TRACE_LEVEL_INFO)
           // if (temperature.sample != UINT16_MAX)
             // SERIAL_INFO("%u\t", temperature.sample);
           // else SERIAL_INFO("-----\t");
@@ -709,30 +765,29 @@ void sensors_reading_task () {
 
           if (humidity.med60 != UINT16_MAX)
             SERIAL_INFO("%u\t", humidity.med60);
-          else SERIAL_INFO("---\t");
+          else SERIAL_INFO("-----\t");
 
           if (humidity.min != UINT16_MAX)
             SERIAL_INFO("%u\t", humidity.min);
-          else SERIAL_INFO("---\t");
+          else SERIAL_INFO("-----\t");
 
           if (humidity.med != UINT16_MAX)
             SERIAL_INFO("%u\t", humidity.med);
-          else SERIAL_INFO("---\t");
+          else SERIAL_INFO("-----\t");
 
           if (humidity.max != UINT16_MAX)
             SERIAL_INFO("%u\t", humidity.max);
-          else SERIAL_INFO("---\t");
+          else SERIAL_INFO("-----\t");
 
           if (rain.tips_count != UINT16_MAX)
             SERIAL_INFO("%u\r\n", rain.tips_count);
-          else SERIAL_INFO("--\r\n");
+          else SERIAL_INFO("-----\r\n");
           #endif
         }
-        else is_first_run = false;
 
-        #if (SERIAL_TRACE_LEVEL == SERIAL_TRACE_LEVEL_INFO)
+        #if (SERIAL_TRACE_LEVEL >= SERIAL_TRACE_LEVEL_INFO)
         delay_ms = 10;
-        sensors_start_time_ms = millis();
+        start_time_ms = millis();
         state_after_wait = END_TASK;
         sensor_state = WAIT_STATE;
         #else
@@ -746,13 +801,14 @@ void sensors_reading_task () {
       is_event_sensors_reading = false;
       ready_tasks_count--;
       interrupts();
+      sensor_state = END_SENSOR;
       break;
 
     case END_SENSOR:
       break;
 
     case WAIT_STATE:
-      if (millis() - sensors_start_time_ms > delay_ms) {
+      if (millis() - start_time_ms > delay_ms) {
         sensor_state = state_after_wait;
       }
       break;
