@@ -15,6 +15,7 @@ SensorDriver::SensorDriver(const char* driver, const char* type, bool *is_setted
   *is_setted = false;
   _is_prepared = is_prepared;
   *_is_prepared = false;
+  _retry = 0;
 }
 
 SensorDriver *SensorDriver::create(const char* driver, const char* type, bool *is_setted, bool *is_prepared) {
@@ -130,6 +131,7 @@ bool SensorDriver::isPrepared() {
 
 void SensorDriver::resetPrepared() {
   *_is_prepared = false;
+  _retry = 0;
 }
 
 bool SensorDriver::isEnd() {
@@ -325,9 +327,10 @@ void SensorDriverRain::prepare() {
 
     if (strcmp(_type, SENSOR_TYPE_TBS) == 0 || strcmp(_type, SENSOR_TYPE_TBR) == 0) {
       Wire.write(I2C_RAIN_COMMAND_ONESHOT_START_STOP);
-      _delay_ms = 100;
+      _delay_ms = 0;
     }
     else {
+      _delay_ms = 0;
       SERIAL_DEBUG(" prepare... [ FAIL ]\r\n");
       return;
     }
@@ -352,7 +355,6 @@ void SensorDriverRain::prepare() {
 
 void SensorDriverRain::get(int32_t *values, uint8_t length) {
   static uint8_t rain_data[I2C_RAIN_TIPS_LENGTH];
-  static bool _is_success;
   uint8_t data_length;
 
   switch (_get_state) {
@@ -365,7 +367,7 @@ void SensorDriverRain::get(int32_t *values, uint8_t length) {
 
       if (_is_success && length >= 1)
         _get_state = SET_RAIN_ADDRESS;
-      else _get_state = END;
+      // else _get_state = END;
       break;
 
     case SET_RAIN_ADDRESS:
@@ -379,7 +381,7 @@ void SensorDriverRain::get(int32_t *values, uint8_t length) {
 
       if (Wire.endTransmission()) {
         _is_success = false;
-        _get_state = END;
+        // _get_state = END;
       }
 
       _start_time_ms = millis();
@@ -388,7 +390,7 @@ void SensorDriverRain::get(int32_t *values, uint8_t length) {
 
       if (_is_success)
         _get_state = READ_RAIN;
-      else _get_state = END;
+      // else _get_state = END;
       break;
 
     case READ_RAIN:
@@ -411,11 +413,11 @@ void SensorDriverRain::get(int32_t *values, uint8_t length) {
       _is_end = false;
 
       if (_is_success)
-        _get_state = READ;
-      else _get_state = END;
+        _get_state = END;
+      // else _get_state = END;
       break;
 
-    case READ:
+    case END:
       #if (SERIAL_TRACE_LEVEL == SERIAL_TRACE_LEVEL_DEBUG)
       SensorDriver::printInfo(_driver, _type, _address, _node);
 
@@ -440,17 +442,8 @@ void SensorDriverRain::get(int32_t *values, uint8_t length) {
       _delay_ms = 20;
       _is_end = true;
       _is_readed = false;
-      _get_state = END;
       break;
-
-    case END:
-      _start_time_ms = millis();
-      _delay_ms = 0;
-      _is_end = true;
-      _is_readed = true;
-      _get_state = INIT;
-      break;
-  }
+    }
 }
 
 #if (USE_JSON)
@@ -555,7 +548,6 @@ void SensorDriverTh::prepare() {
 void SensorDriverTh::get(int32_t *values, uint8_t length) {
   static uint8_t temperature_data[I2C_TH_TEMPERATURE_DATA_MAX_LENGTH];
   static uint8_t humidity_data[I2C_TH_HUMIDITY_DATA_MAX_LENGTH];
-  static bool _is_success;
   uint8_t data_length;
 
   switch (_get_state) {
@@ -568,10 +560,11 @@ void SensorDriverTh::get(int32_t *values, uint8_t length) {
 
       if (_is_success && length >= 1)
         _get_state = SET_TEMPERATURE_ADDRESS;
-      else _get_state = END;
+      // else _get_state = END;
       break;
 
     case SET_TEMPERATURE_ADDRESS:
+      // SERIAL_INFO("aa");
       Wire.beginTransmission(_address);
 
       if (strcmp(_type, SENSOR_TYPE_STH) == 0) {
@@ -603,9 +596,11 @@ void SensorDriverTh::get(int32_t *values, uint8_t length) {
       _delay_ms = 0;
       _is_end = false;
 
+      // SERIAL_INFO("TA %u ",_is_success);
+
       if (_is_success)
         _get_state = READ_TEMPERATURE;
-      else _get_state = END;
+      // else _get_state = END;
       break;
 
     case READ_TEMPERATURE:
@@ -636,11 +631,13 @@ void SensorDriverTh::get(int32_t *values, uint8_t length) {
       _delay_ms = 0;
       _is_end = false;
 
+      // SERIAL_INFO("RT %u ",_is_success);
+
       if (_is_success && length >= 2)
         _get_state = SET_HUMIDITY_ADDRESS;
       else if (_is_success && length >= 1)
-        _get_state = READ;
-      else _get_state = END;
+        _get_state = END;
+      // else _get_state = END;
       break;
 
     case SET_HUMIDITY_ADDRESS:
@@ -675,9 +672,11 @@ void SensorDriverTh::get(int32_t *values, uint8_t length) {
       _delay_ms = 0;
       _is_end = false;
 
+      // SERIAL_INFO("HA %u ",_is_success);
+
       if (_is_success)
         _get_state = READ_HUMIDITY;
-      else _get_state = END;
+      // else _get_state = END;
       break;
 
     case READ_HUMIDITY:
@@ -707,12 +706,14 @@ void SensorDriverTh::get(int32_t *values, uint8_t length) {
       _delay_ms = 0;
       _is_end = false;
 
+      // SERIAL_INFO("RH %u ",_is_success);
+
       if (_is_success)
-        _get_state = READ;
-      else _get_state = END;
+        _get_state = END;
+      // else _get_state = END;
       break;
 
-    case READ:
+    case END:
       #if (SERIAL_TRACE_LEVEL == SERIAL_TRACE_LEVEL_DEBUG)
       SensorDriver::printInfo(_driver, _type, _address, _node);
 
@@ -723,6 +724,7 @@ void SensorDriverTh::get(int32_t *values, uint8_t length) {
 
       if (length >= 1) {
         values[0] = (uint16_t)(temperature_data[1] << 8) | (temperature_data[0]);
+        // SERIAL_INFO("%s %u ", _type, values[0]);
 
         if (_is_success && values[0] >= SENSOR_DRIVER_TEMPERATURE_MIN && values[0] <= SENSOR_DRIVER_TEMPERATURE_MAX)
           SERIAL_DEBUG("--> temperature: %u\r\n", values[0]);
@@ -745,19 +747,12 @@ void SensorDriverTh::get(int32_t *values, uint8_t length) {
         }
       }
 
-      _start_time_ms = millis();
-      _delay_ms = 20;
-      _is_end = true;
-      _is_readed = false;
-      _get_state = END;
-      break;
+      // SERIAL_INFO("R %u %s\r\n",_is_success, _type);
 
-    case END:
       _start_time_ms = millis();
       _delay_ms = 0;
       _is_end = true;
-      _is_readed = true;
-      _get_state = INIT;
+      _is_readed = false;
       break;
   }
 }

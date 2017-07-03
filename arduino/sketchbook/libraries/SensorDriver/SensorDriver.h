@@ -64,6 +64,7 @@ protected:
   bool _is_end;
   bool _is_success;
   bool _is_readed;
+  uint8_t _retry;
 
   #if (SERIAL_TRACE_LEVEL == SERIAL_TRACE_LEVEL_DEBUG)
   static void printInfo(const char* driver, const char* type, const uint8_t address = 0, const uint8_t node = 0);
@@ -126,7 +127,6 @@ protected:
     INIT,
     SET_RAIN_ADDRESS,
     READ_RAIN,
-    READ,
     END
   } _get_state;
 };
@@ -161,7 +161,6 @@ protected:
     READ_TEMPERATURE,
     SET_HUMIDITY_ADDRESS,
     READ_HUMIDITY,
-    READ,
     END
   } _get_state;
 };
