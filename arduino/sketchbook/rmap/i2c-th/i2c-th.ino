@@ -36,62 +36,20 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "i2c-th.h"
 
 void setup() {
-  wdt_disable();
-  TRACE_BEGIN(230400);
-
-  readable_data_read_ptr = &readable_data_1;
-  readable_data_write_ptr = &readable_data_2;
-  writable_data_ptr = &writable_data;
-
-  readable_data_write_ptr->module_type = MODULE_TYPE;
-  readable_data_write_ptr->module_version = MODULE_VERSION;
-  reset_buffers();
-  memcpy((void *) readable_data_read_ptr, (const void*) readable_data_write_ptr, sizeof(readable_data_t));
-
-  is_event_sensors_reading = false;
-
-  #if (USE_WDT_TASK)
-  is_event_wdt = false;
-  #endif
-
-  is_event_i2c_receive = false;
-  wdt_timer.value = 0;
-
-  #if ((REPORT_MINUTES / OBSERVATIONS_MINUTES) % 2 == 0)
-  samples_count = SAMPLE_COUNT_MAX;
-  #else
-  samples_count = SAMPLE_COUNT_MIN;
-  #endif
-
-  ready_tasks_count = 0;
-  i2c_rx_data_length = 0;
-
-  pinMode(CONFIGURATION_RESET_PIN, INPUT_PULLUP);
-  load_configuration();
-
-  Wire.begin(configuration.i2c_address);
-  Wire.setClock(I2C_BUS_CLOCK);
-  Wire.onRequest(i2c_request_interrupt_handler);
-  Wire.onReceive(i2c_receive_interrupt_handler);
-
-  init_sensors();
-
-  set_sleep_mode(SLEEP_MODE_PWR_DOWN);
-  awakened_event_occurred_time_ms = millis();
-
-  wdt_init(WDT_TIMER);
-
-  state = INIT;
+  init_system();
 }
 
 void loop() {
   switch (state) {
     case INIT:
-      #if (USE_POWER_DOWN)
-      state = ENTER_POWER_DOWN;
-      #else
+      init_buffers();
+      init_tasks();
+      init_pins();
+      load_configuration();
+      init_wire();
+      init_spi();
+      init_sensors();
       state = TASKS_EXECUTION;
-      #endif
       wdt_timer.interrupt_count = WDT_INTERRUPT_COUNT_DEFAULT;
       break;
 
@@ -121,8 +79,8 @@ void loop() {
         wdt_task();
       #endif
 
-      if (is_event_i2c_receive)
-        i2c_receive_task();
+      if (is_event_command_task)
+        command_task();
 
       if (ready_tasks_count == 0)
         state = END;
@@ -131,10 +89,69 @@ void loop() {
       break;
 
     case END:
-      state = INIT;
+      #if (USE_POWER_DOWN)
+      state = ENTER_POWER_DOWN;
+      #else
+      state = TASKS_EXECUTION;
+      #endif
       wdt_timer.interrupt_count = WDT_INTERRUPT_COUNT_DEFAULT;
       break;
   }
+}
+
+void init_buffers() {
+  readable_data_read_ptr = &readable_data_1;
+  readable_data_write_ptr = &readable_data_2;
+  writable_data_ptr = &writable_data;
+
+  readable_data_write_ptr->module_type = MODULE_TYPE;
+  readable_data_write_ptr->module_version = MODULE_VERSION;
+  reset_buffers();
+  memcpy((void *) readable_data_read_ptr, (const void*) readable_data_write_ptr, sizeof(readable_data_t));
+}
+
+void init_tasks() {
+  noInterrupts();
+  ready_tasks_count = 0;
+
+  is_event_command_task = false;
+  is_event_sensors_reading = false;
+
+  #if (USE_WDT_TASK)
+  is_event_wdt = false;
+  #endif
+
+  interrupts();
+}
+
+void init_pins() {
+  pinMode(CONFIGURATION_RESET_PIN, INPUT_PULLUP);
+}
+
+void init_wire() {
+  Wire.begin(configuration.i2c_address);
+  Wire.setClock(I2C_BUS_CLOCK);
+  Wire.onRequest(i2c_request_interrupt_handler);
+  Wire.onReceive(i2c_receive_interrupt_handler);
+  digitalWrite(SDA, LOW);
+  digitalWrite(SCL, LOW);
+}
+
+void init_spi() {
+}
+
+void init_rtc() {
+}
+
+void init_system() {
+  wdt_disable();
+  TRACE_BEGIN(230400);
+  wdt_timer.value = 0;
+  wdt_timer.interrupt_count = WDT_INTERRUPT_COUNT_DEFAULT;
+  set_sleep_mode(SLEEP_MODE_PWR_DOWN);
+  awakened_event_occurred_time_ms = millis();
+  wdt_init(WDT_TIMER);
+  state = INIT;
 }
 
 void print_configuration() {
@@ -206,7 +223,7 @@ void init_sensors () {
   is_first_run = true;
   sensors_count = 0;
 
-  SERIAL_INFO("Sensors: [ OK ]\r\n");
+  SERIAL_INFO("Sensors...\r\n");
 
   #if (USE_SENSOR_ADT)
   SensorDriver::createAndSetup(SENSOR_DRIVER_I2C, SENSOR_TYPE_ADT, &is_sensor_adt_setted, &is_sensor_adt_prepared, configuration.i2c_temperature_address, sensors, &sensors_count);
@@ -231,7 +248,9 @@ void init_sensors () {
     #else
     SERIAL_INFO("--> acquiring %u samples in %u minutes\r\n\r\n", SAMPLE_COUNT_MIN, OBSERVATIONS_MINUTES);
     #endif
-    SERIAL_INFO("T-IST\tT-MIN\tT-MED\tT-MAX\tH-IST\tH-MIN\tH-MED\tH-MAX\tT-CNT\tH-CNT\r\n");
+    SERIAL_INFO("T-IST\tT-MIN\tT-MED\tT-MAX\tH-IST\tH-MIN\tH-MED\tH-MAX");
+    SERIAL_DEBUG("\tT-CNT\tH-CNT");
+    SERIAL_INFO("\r\n");
   }
 }
 
@@ -261,21 +280,32 @@ ISR(WDT_vect) {
 }
 
 void i2c_request_interrupt_handler() {
+  // for (uint8_t i=0; i<readable_data_length; i++)
+    // Wire.write(((uint8_t *)readable_data_read_ptr+readable_data_address)[i]);
+
   Wire.write((uint8_t *)readable_data_read_ptr+readable_data_address, readable_data_length);
 }
 
-void i2c_receive_interrupt_handler(int receive_bytes_count) {
-  for (uint8_t i=0; i<receive_bytes_count; i++)
+void i2c_receive_interrupt_handler(int rx_data_length) {
+  for (uint8_t i=0; i<rx_data_length; i++)
     i2c_rx_data[i] = Wire.read();
 
-  i2c_rx_data_length = receive_bytes_count;
-
-  noInterrupts();
-  if (!is_event_i2c_receive) {
-    is_event_i2c_receive = true;
-    ready_tasks_count++;
+  if (rx_data_length == 2 && is_readable_register(i2c_rx_data[0])) {
+    readable_data_address = i2c_rx_data[0];
+    readable_data_length = i2c_rx_data[1];
   }
-  interrupts();
+  else if (rx_data_length == 2 && is_command(i2c_rx_data[0])) {
+    noInterrupts();
+    if (!is_event_command_task) {
+      is_event_command_task = true;
+      ready_tasks_count++;
+    }
+    interrupts();
+  }
+  else if (is_writable_register(i2c_rx_data[0])) {
+    for (uint8_t i=1; i<rx_data_length; i++)
+      ((uint8_t *)writable_data_ptr)[i2c_rx_data[0] - I2C_WRITE_REGISTER_START_ADDRESS] = i2c_rx_data[i];
+  }
 }
 
 #if (USE_WDT_TASK)
@@ -313,7 +343,7 @@ void samples_processing() {
     // average
     temperature = temperature / temperature_samples.count;
     temperature_observations.med[temperature_observations.count++] = temperature;
-    DEBUG_INFO("%u\t \t \t \t", temperature);
+    SERIAL_DEBUG("%u\t \t \t \t", temperature);
   }
 
   if (is_processing_humidity) {
@@ -323,11 +353,11 @@ void samples_processing() {
     // average
     humidity = humidity / humidity_samples.count;
     humidity_observations.med[humidity_observations.count++] = humidity;
-    DEBUG_INFO("%u\t \t \t \t", humidity);
+    SERIAL_DEBUG("%u\t \t \t \t", humidity);
   }
 
   if (is_processing_temperature || is_processing_humidity) {
-    DEBUG_INFO("%u/%u\t%u/%u\r\n", temperature_samples.count, samples_count, humidity_samples.count, samples_count);
+    SERIAL_DEBUG("%u/%u\t%u/%u\r\n", temperature_samples.count, samples_count, humidity_samples.count, samples_count);
     temperature_samples.count = 0;
     humidity_samples.count = 0;
     #if (REPORT_MINUTES != OBSERVATIONS_MINUTES)
@@ -351,7 +381,10 @@ void observations_processing() {
   float sigma_temperature = 0;
   float sigma_humidity = 0;
 
-  if (temperature_observations.count) {
+  bool is_processing_temperature = (temperature_observations.count == OBSERVATION_COUNT);
+  bool is_processing_humidty = (humidity_observations.count == OBSERVATION_COUNT);
+
+  if (is_processing_temperature) {
     readable_data_write_ptr->temperature.max = 0;
 
     for (i = 0; i < temperature_observations.count; i++) {
@@ -379,7 +412,7 @@ void observations_processing() {
     readable_data_write_ptr->temperature.sigma = sigma_temperature * 100;
   }
 
-  if (humidity_observations.count) {
+  if (is_processing_humidty) {
     readable_data_write_ptr->humidity.max = 0;
 
     for (i = 0; i < humidity_observations.count; i++) {
@@ -407,38 +440,86 @@ void observations_processing() {
     readable_data_write_ptr->humidity.sigma = sigma_humidity * 100;
   }
 
-  #if (SERIAL_TRACE_LEVEL == SERIAL_TRACE_LEVEL_INFO)
-  if (readable_data_write_ptr->temperature.med60 != UINT16_MAX)
+  #if (SERIAL_TRACE_LEVEL >= SERIAL_TRACE_LEVEL_INFO)
+  if (is_processing_temperature || is_processing_humidty) {
+    if (readable_data_write_ptr->temperature.med60 != UINT16_MAX)
     SERIAL_INFO("%u\t", readable_data_write_ptr->temperature.med60);
+    else SERIAL_INFO("-----\t");
+
+    if (readable_data_write_ptr->temperature.min != UINT16_MAX)
+    SERIAL_INFO("%u\t", readable_data_write_ptr->temperature.min);
+    else SERIAL_INFO("-----\t");
+
+    if (readable_data_write_ptr->temperature.med != UINT16_MAX)
+    SERIAL_INFO("%u\t", readable_data_write_ptr->temperature.med);
+    else SERIAL_INFO("-----\t");
+
+    if (readable_data_write_ptr->temperature.max != UINT16_MAX)
+    SERIAL_INFO("%u\t", readable_data_write_ptr->temperature.max);
+    else SERIAL_INFO("-----\t");
+
+    if (readable_data_write_ptr->humidity.med60 != UINT16_MAX)
+    SERIAL_INFO("%u\t", readable_data_write_ptr->humidity.med60);
+    else SERIAL_INFO("-----\t");
+
+    if (readable_data_write_ptr->humidity.min != UINT16_MAX)
+    SERIAL_INFO("%u\t", readable_data_write_ptr->humidity.min);
+    else SERIAL_INFO("-----\t");
+
+    if (readable_data_write_ptr->humidity.med != UINT16_MAX)
+    SERIAL_INFO("%u\t", readable_data_write_ptr->humidity.med);
+    else SERIAL_INFO("-----\t");
+
+    if (readable_data_write_ptr->humidity.max != UINT16_MAX)
+    SERIAL_INFO("%u\r\n", readable_data_write_ptr->humidity.max);
+    else SERIAL_INFO("-----\r\n");
+  }
+  #endif
+}
+
+void observations_processing_debug() {
+  readable_data_write_ptr->temperature.med60 = 29999;
+  readable_data_write_ptr->temperature.max = 30010;
+  readable_data_write_ptr->temperature.med = 30000;
+  readable_data_write_ptr->temperature.min = 30000;
+
+  readable_data_write_ptr->humidity.med60 = 60;
+  readable_data_write_ptr->humidity.max = 100;
+  readable_data_write_ptr->humidity.med = 50;
+  readable_data_write_ptr->humidity.min = 0;
+
+  #if (SERIAL_TRACE_LEVEL >= SERIAL_TRACE_LEVEL_INFO)
+  if (readable_data_write_ptr->temperature.med60 != UINT16_MAX)
+  SERIAL_INFO("%u\t", readable_data_write_ptr->temperature.med60);
   else SERIAL_INFO("-----\t");
 
   if (readable_data_write_ptr->temperature.min != UINT16_MAX)
-    SERIAL_INFO("%u\t", readable_data_write_ptr->temperature.min);
+  SERIAL_INFO("%u\t", readable_data_write_ptr->temperature.min);
   else SERIAL_INFO("-----\t");
 
   if (readable_data_write_ptr->temperature.med != UINT16_MAX)
-    SERIAL_INFO("%u\t", readable_data_write_ptr->temperature.med);
+  SERIAL_INFO("%u\t", readable_data_write_ptr->temperature.med);
   else SERIAL_INFO("-----\t");
 
   if (readable_data_write_ptr->temperature.max != UINT16_MAX)
-    SERIAL_INFO("%u\t", readable_data_write_ptr->temperature.max);
+  SERIAL_INFO("%u\t", readable_data_write_ptr->temperature.max);
   else SERIAL_INFO("-----\t");
 
   if (readable_data_write_ptr->humidity.med60 != UINT16_MAX)
-    SERIAL_INFO("%u\t", readable_data_write_ptr->humidity.med60);
-  else SERIAL_INFO("---\t");
+  SERIAL_INFO("%u\t", readable_data_write_ptr->humidity.med60);
+  else SERIAL_INFO("-----\t");
 
   if (readable_data_write_ptr->humidity.min != UINT16_MAX)
-    SERIAL_INFO("%u\t", readable_data_write_ptr->humidity.min);
-  else SERIAL_INFO("---\t");
+  SERIAL_INFO("%u\t", readable_data_write_ptr->humidity.min);
+  else SERIAL_INFO("-----\t");
 
   if (readable_data_write_ptr->humidity.med != UINT16_MAX)
-    SERIAL_INFO("%u\t", readable_data_write_ptr->humidity.med);
-  else SERIAL_INFO("---\t");
+  SERIAL_INFO("%u\t", readable_data_write_ptr->humidity.med);
+  else SERIAL_INFO("-----\t");
 
   if (readable_data_write_ptr->humidity.max != UINT16_MAX)
-    SERIAL_INFO("%u\r\n", readable_data_write_ptr->humidity.max);
-  else SERIAL_INFO("---\r\n");
+  SERIAL_INFO("%u\r\n", readable_data_write_ptr->humidity.max);
+  else SERIAL_INFO("-----\r\n");
   #endif
 }
 
@@ -447,7 +528,7 @@ void sensors_reading_task () {
   static uint8_t retry;
   static sensor_state_t state_after_wait;
   static uint32_t delay_ms;
-  static uint32_t sensors_start_time_ms;
+  static uint32_t start_time_ms;
   static int32_t values_readed_from_sensor[2];
 
   switch (sensor_state) {
@@ -461,7 +542,7 @@ void sensors_reading_task () {
     case PREPARE_SENSOR:
       sensors[i]->prepare();
       delay_ms = sensors[i]->getDelay();
-      sensors_start_time_ms = sensors[i]->getStartTime();
+      start_time_ms = sensors[i]->getStartTime();
       state_after_wait = IS_SENSOR_PREPARED;
       sensor_state = WAIT_STATE;
       break;
@@ -474,7 +555,7 @@ void sensors_reading_task () {
       // retry
       else if (++retry < SENSORS_RETRY_COUNT_MAX) {
         delay_ms = SENSORS_RETRY_DELAY_MS;
-        sensors_start_time_ms = millis();
+        start_time_ms = millis();
         state_after_wait = PREPARE_SENSOR;
         sensor_state = WAIT_STATE;
       }
@@ -485,7 +566,7 @@ void sensors_reading_task () {
     case GET_SENSOR:
       sensors[i]->get(values_readed_from_sensor, VALUES_TO_READ_FROM_SENSOR_COUNT);
       delay_ms = sensors[i]->getDelay();
-      sensors_start_time_ms = sensors[i]->getStartTime();
+      start_time_ms = sensors[i]->getStartTime();
       state_after_wait = IS_SENSOR_GETTED;
       sensor_state = WAIT_STATE;
       break;
@@ -502,7 +583,7 @@ void sensors_reading_task () {
       // retry
       else if (++retry < SENSORS_RETRY_COUNT_MAX) {
         delay_ms = SENSORS_RETRY_DELAY_MS;
-        sensors_start_time_ms = millis();
+        start_time_ms = millis();
         state_after_wait = PREPARE_SENSOR;
         sensor_state = WAIT_STATE;
       }
@@ -538,15 +619,21 @@ void sensors_reading_task () {
       }
       // end
       else {
-        if (configuration.is_continuous)
+        if (configuration.is_continuous) {
           samples_processing();
+          // observations_processing_debug();
+
+          if (!is_first_run)
+            observations_processing();
+          else is_first_run = false;
+        }
 
         for (i=0; i<sensors_count; i++)
           sensors[i]->resetPrepared();
 
-        #if (SERIAL_TRACE_LEVEL == SERIAL_TRACE_LEVEL_INFO)
-        delay_ms = 10;
-        sensors_start_time_ms = millis();
+        #if (SERIAL_TRACE_LEVEL >= SERIAL_TRACE_LEVEL_INFO)
+        delay_ms = 5;
+        start_time_ms = millis();
         state_after_wait = END_TASK;
         sensor_state = WAIT_STATE;
         #else
@@ -560,47 +647,18 @@ void sensors_reading_task () {
       is_event_sensors_reading = false;
       ready_tasks_count--;
       interrupts();
+      sensor_state = END_SENSOR;
       break;
 
     case END_SENSOR:
       break;
 
     case WAIT_STATE:
-      if (millis() - sensors_start_time_ms > delay_ms) {
+      if (millis() - start_time_ms > delay_ms) {
         sensor_state = state_after_wait;
       }
       break;
   }
-}
-
-void i2c_receive_task() {
-  uint8_t i;
-
-  // SERIAL_DEBUG("I2C received %d  bytes: ", i2c_rx_data_length);
-
-  // #if (SERIAL_TRACE_LEVEL == SERIAL_TRACE_LEVEL_DEBUG)
-  // for (i=0; i<i2c_rx_data_length; i++) {
-  //   SERIAL_DEBUG("%x ",i2c_rx_data[i]);
-  // }
-  // #endif
-  // SERIAL_DEBUG("\r\n");
-
-  if (i2c_rx_data_length == 2 && is_readable_register(i2c_rx_data[0])) {
-    readable_data_address = i2c_rx_data[0];
-    readable_data_length = i2c_rx_data[1];
-  }
-  else if (i2c_rx_data_length == 2 && is_command(i2c_rx_data[0])) {
-    exec_command();
-  }
-  else if (is_writable_register(i2c_rx_data[0])) {
-    for (i=1; i<i2c_rx_data_length; i++)
-      ((uint8_t *)writable_data_ptr)[i2c_rx_data[0] - I2C_WRITE_REGISTER_START_ADDRESS] = i2c_rx_data[i];
-  }
-
-  noInterrupts();
-  is_event_i2c_receive = false;
-  ready_tasks_count--;
-  interrupts();
 }
 
 void exchange_buffers() {
@@ -618,9 +676,15 @@ void reset_buffers() {
   temperature_samples.error_count = 0;
   humidity_observations.count = 0;
   temperature_observations.count = 0;
+
+  #if ((REPORT_MINUTES / OBSERVATIONS_MINUTES) % 2 == 0)
+  samples_count = SAMPLE_COUNT_MAX;
+  #else
+  samples_count = SAMPLE_COUNT_MIN;
+  #endif
 }
 
-void exec_command() {
+void command_task() {
   #if (SERIAL_TRACE_LEVEL > SERIAL_TRACE_LEVEL_OFF)
   char buffer[30];
   #endif
@@ -699,19 +763,24 @@ void exec_command() {
     is_continuous = false;
     is_start = false;
     is_stop = false;
-    SERIAL_DEBUG("Execute command [ SAVE ]\r\n");
+    SERIAL_TRACE("Execute command [ SAVE ]\r\n");
     save_configuration(CONFIGURATION_CURRENT);
     break;
   }
 
   #if (SERIAL_TRACE_LEVEL > SERIAL_TRACE_LEVEL_OFF)
   if (configuration.is_oneshot == is_oneshot || configuration.is_continuous == is_continuous) {
-    SERIAL_DEBUG("Execute [ %s ]\r\n", buffer);
+    SERIAL_TRACE("Execute [ %s ]\r\n", buffer);
   }
   else if (configuration.is_oneshot == is_continuous || configuration.is_continuous == is_oneshot) {
-    SERIAL_DEBUG("Ignore [ %s ]\r\n", buffer);
+    SERIAL_TRACE("Ignore [ %s ]\r\n", buffer);
   }
   #endif
+
+  noInterrupts();
+  is_event_command_task = false;
+  ready_tasks_count--;
+  interrupts();
 }
 
 void commands() {
@@ -733,10 +802,6 @@ void commands() {
     exchange_buffers();
   }
   else if (configuration.is_continuous && is_continuous && is_stop) {
-    if (!is_first_run)
-      observations_processing();
-    else is_first_run = false;
-
     exchange_buffers();
   }
 
@@ -748,8 +813,14 @@ void commands() {
       ready_tasks_count++;
     }
   }
-  else if (configuration.is_continuous && is_continuous && is_start)
+  else if (configuration.is_continuous && is_continuous && is_start) {
+    #if (USE_WDT_TASK)
+    // wdt_disable();
+    // wdt_init(WDT_TIMER);
+    wdt_reset();
+    #endif
     reset_buffers();
+  }
   else if (is_start) {
     reset_buffers();
     exchange_buffers();

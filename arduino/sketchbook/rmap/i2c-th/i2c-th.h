@@ -212,7 +212,7 @@ volatile uint8_t i2c_rx_data[I2C_MAX_DATA_LENGTH];
   \var i2c_rx_data_length
   Length of i2c received data.
 */
-volatile uint8_t i2c_rx_data_length;
+// volatile uint8_t i2c_rx_data_length;
 
 /*!
   \var ready_tasks_count
@@ -267,6 +267,14 @@ sensor_state_t sensor_state;
 /**********************************************************************
  * FUNCTIONS
  *********************************************************************/
+void init_systems(void);
+void init_buffers(void);
+void init_tasks(void);
+void init_pins(void);
+void init_wire(void);
+void init_spi(void);
+void init_rtc(void);
+void init_sensors(void);
 
 /*! \fn void print_configuration(void)
  *  \brief Print configuration.
@@ -289,12 +297,6 @@ void save_configuration(bool);
 
 void init_sensors(void);
 
-/*! \fn void exec_command(void)
- *  \brief Executes the command received on i2c bus.
- *  \return void.
- */
-void exec_command(void);
-
 void commands(void);
 
 void reset_buffers(void);
@@ -315,13 +317,13 @@ void sensors_reading_task(void);
 
 volatile uint32_t is_event_sensors_reading;
 
-volatile bool is_event_i2c_receive;
+volatile bool is_event_command_task;
 
-/*! \fn void i2c_receive_task(void)
- *  \brief I2C receive task.
+/*! \fn void command_task(void)
+ *  \brief Executes the command received on i2c bus.
  *  \return void.
  */
-void i2c_receive_task(void);
+void command_task(void);
 
 #if (USE_WDT_TASK)
 volatile bool is_event_wdt;

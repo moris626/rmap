@@ -90,6 +90,9 @@ void loop() {
         ethernet_task();
       #endif
 
+      // if (is_event_sd)
+        // sd_task();
+
       if (is_event_time)
         time_task();
 
@@ -125,7 +128,12 @@ void init_tasks() {
   ready_tasks_count = 0;
 
   is_event_sensors_reading = false;
-  is_event_time = false;
+
+  is_event_time = true;
+  ready_tasks_count++;
+
+  // is_event_sd = true;
+  // ready_tasks_count++;
 
   #if (USE_WDT_TASK)
   is_event_wdt = false;
@@ -146,6 +154,7 @@ void init_tasks() {
 
   next_minute_for_sensor_reading = 255;
   time_state = INIT_TIME;
+  sd_state = INIT_SD;
 
   interrupts();
 }
@@ -172,9 +181,7 @@ void init_wire() {
 }
 
 void init_spi() {
-  #if (MODULE_TYPE == STIMA_MODULE_TYPE_SAMPLE_ETH || MODULE_TYPE == STIMA_MODULE_TYPE_REPORT_ETH)
   SPI.begin();
-  #endif
 }
 
 void init_rtc() {
@@ -198,8 +205,6 @@ void print_configuration() {
   getStimaNameByType(stima_name, configuration.module_type);
   SERIAL_INFO("--> type: %s\r\n", stima_name);
   SERIAL_INFO("--> version: %d\r\n", configuration.module_version);
-  SERIAL_INFO("--> i2c-th address: 0x%x (%d)\r\n", configuration.i2c_th_address, configuration.i2c_th_address);
-  SERIAL_INFO("--> i2c-rain address: 0x%x (%d)\r\n", configuration.i2c_rain_address, configuration.i2c_rain_address);
 
   #if (MODULE_TYPE == STIMA_MODULE_TYPE_SAMPLE_ETH || MODULE_TYPE == STIMA_MODULE_TYPE_REPORT_ETH)
   SERIAL_INFO("--> dhcp: %s\r\n", configuration.is_dhcp_enable ? "on" : "off");
@@ -236,8 +241,39 @@ void save_configuration(bool is_default) {
     SERIAL_INFO("Save default configuration... [ OK ]\r\n");
     configuration.module_type = MODULE_TYPE;
     configuration.module_version = MODULE_VERSION;
-    configuration.i2c_th_address = CONFIGURATION_DEFAULT_TH_ADDRESS;
-    configuration.i2c_rain_address = CONFIGURATION_DEFAULT_RAIN_ADDRESS;
+
+    uint8_t i=0;
+
+    strcpy(configuration.sensors[i].driver, SENSOR_DRIVER_I2C);
+    strcpy(configuration.sensors[i].type, SENSOR_TYPE_TBS);
+    strcpy(configuration.sensors[i].mqtt_path, "1,0,900/1,-,-,-/");
+    configuration.sensors[i].address = CONFIGURATION_DEFAULT_RAIN_ADDRESS;
+    i++;
+
+    strcpy(configuration.sensors[i].driver, SENSOR_DRIVER_I2C);
+    strcpy(configuration.sensors[i].type, SENSOR_TYPE_ITH);
+    strcpy(configuration.sensors[i].mqtt_path, "254,0,0/103,2000,-,-/");
+    configuration.sensors[i].address = CONFIGURATION_DEFAULT_TH_ADDRESS;
+    i++;
+
+    strcpy(configuration.sensors[i].driver, SENSOR_DRIVER_I2C);
+    strcpy(configuration.sensors[i].type, SENSOR_TYPE_NTH);
+    strcpy(configuration.sensors[i].mqtt_path, "3,0,0/103,2000,-,-/");
+    configuration.sensors[i].address = CONFIGURATION_DEFAULT_TH_ADDRESS;
+    i++;
+
+    strcpy(configuration.sensors[i].driver, SENSOR_DRIVER_I2C);
+    strcpy(configuration.sensors[i].type, SENSOR_TYPE_MTH);
+    strcpy(configuration.sensors[i].mqtt_path, "0,0,0/103,2000,-,-/");
+    configuration.sensors[i].address = CONFIGURATION_DEFAULT_TH_ADDRESS;
+    i++;
+
+    strcpy(configuration.sensors[i].driver, SENSOR_DRIVER_I2C);
+    strcpy(configuration.sensors[i].type, SENSOR_TYPE_XTH);
+    strcpy(configuration.sensors[i].mqtt_path, "2,0,0/103,2000,-,-/");
+    configuration.sensors[i].address = CONFIGURATION_DEFAULT_TH_ADDRESS;
+    i++;
+
 
     #if (MODULE_TYPE == STIMA_MODULE_TYPE_SAMPLE_ETH || MODULE_TYPE == STIMA_MODULE_TYPE_REPORT_ETH)
     configuration.is_dhcp_enable = CONFIGURATION_DEFAULT_ETHERNET_DHCP_ENABLE;
@@ -261,8 +297,6 @@ void save_configuration(bool is_default) {
   }
   else {
     SERIAL_INFO("Save configuration... [ OK ]\r\n");
-    configuration.i2c_th_address = writable_data.i2c_th_address;
-    configuration.i2c_rain_address = writable_data.i2c_rain_address;
 
     #if (MODULE_TYPE == STIMA_MODULE_TYPE_SAMPLE_ETH || MODULE_TYPE == STIMA_MODULE_TYPE_REPORT_ETH)
     configuration.is_dhcp_enable = writable_data.is_dhcp_enable;
@@ -298,35 +332,17 @@ void init_sensors () {
 
   SERIAL_INFO("Sensors...\r\n");
 
-  #if (USE_SENSOR_TBS)
-  SensorDriver::createAndSetup(SENSOR_DRIVER_I2C, SENSOR_TYPE_TBS, &is_sensors_rain_setted, &is_sensors_rain_prepared, configuration.i2c_rain_address, sensors, &sensors_count);
-  SERIAL_INFO("--> %u: %s-%s\r\n", sensors_count, SENSOR_DRIVER_I2C, SENSOR_TYPE_TBS);
-  #endif
+  for (uint8_t i=0; i<USE_SENSORS_COUNT; i++) {
+    SensorDriver::createAndSetup(configuration.sensors[i].driver, configuration.sensors[i].type, configuration.sensors[i].address, sensors, &sensors_count);
+    SERIAL_INFO("--> %u: %s-%s: %s\t", i+1, configuration.sensors[i].driver, configuration.sensors[i].type, configuration.sensors[i].mqtt_path);
 
-  #if (USE_SENSOR_TBR)
-  SensorDriver::createAndSetup(SENSOR_DRIVER_I2C, SENSOR_TYPE_TBR, &is_sensors_rain_setted, &is_sensors_rain_prepared, configuration.i2c_rain_address, sensors, &sensors_count);
-  SERIAL_INFO("--> %u: %s-%s\r\n", sensors_count, SENSOR_DRIVER_I2C, SENSOR_TYPE_TBR);
-  #endif
-
-  #if (USE_SENSOR_ITH)
-  SensorDriver::createAndSetup(SENSOR_DRIVER_I2C, SENSOR_TYPE_ITH, &is_sensors_th_setted, &is_sensors_th_prepared, configuration.i2c_th_address, sensors, &sensors_count);
-  SERIAL_INFO("--> %u: %s-%s\r\n", sensors_count, SENSOR_DRIVER_I2C, SENSOR_TYPE_ITH);
-  #endif
-
-  #if (USE_SENSOR_MTH)
-  SensorDriver::createAndSetup(SENSOR_DRIVER_I2C, SENSOR_TYPE_MTH, &is_sensors_th_setted, &is_sensors_th_prepared, configuration.i2c_th_address, sensors, &sensors_count);
-  SERIAL_INFO("--> %u: %s-%s\r\n", sensors_count, SENSOR_DRIVER_I2C, SENSOR_TYPE_MTH);
-  #endif
-
-  #if (USE_SENSOR_NTH)
-  SensorDriver::createAndSetup(SENSOR_DRIVER_I2C, SENSOR_TYPE_NTH, &is_sensors_th_setted, &is_sensors_th_prepared, configuration.i2c_th_address, sensors, &sensors_count);
-  SERIAL_INFO("--> %u: %s-%s\r\n", sensors_count, SENSOR_DRIVER_I2C, SENSOR_TYPE_NTH);
-  #endif
-
-  #if (USE_SENSOR_XTH)
-  SensorDriver::createAndSetup(SENSOR_DRIVER_I2C, SENSOR_TYPE_XTH, &is_sensors_th_setted, &is_sensors_th_prepared, configuration.i2c_th_address, sensors, &sensors_count);
-  SERIAL_INFO("--> %u: %s-%s\r\n", sensors_count, SENSOR_DRIVER_I2C, SENSOR_TYPE_XTH);
-  #endif
+    if (sensors[i]->isSetted()) {
+      SERIAL_INFO("[ OK ]\r\n");
+    }
+    else {
+      SERIAL_INFO("[ FAIL ]\r\n");
+    }
+  }
 
   SERIAL_INFO("\r\n");
 }
@@ -346,7 +362,6 @@ ISR(WDT_vect) {
   wdt_timer.interrupt_count--;
 
   if (wdt_timer.interrupt_count == 0) {
-    digitalWrite(W5500_RESET_PIN, LOW);
     wdt_disable();
     wdt_reset();
     wdt_enable(WDTO_15MS);
@@ -390,7 +405,7 @@ void rtc_task() {
     Pcf8563::enableTimer();
 
     if (minute() == next_minute_for_sensor_reading) {
-      SERIAL_DEBUG("Doing sensor reading...\r\n");
+      SERIAL_TRACE("Doing sensor reading...\r\n");
       sensor_reading_day = day();
       sensor_reading_month = month();
       sensor_reading_year = year(),
@@ -443,7 +458,7 @@ void time_task() {
         delay_ms = NTP_RETRY_DELAY_MS;
         start_time_ms = millis();
         state_after_wait = SEND_REQUEST;
-        time_state = WAIT_FOR_NTP_RETRY;
+        time_state = WAIT_NTP_STATE;
       }
       // fail
       else time_state = END_TIME;
@@ -461,7 +476,7 @@ void time_task() {
         delay_ms = NTP_RETRY_DELAY_MS;
         start_time_ms = millis();
         state_after_wait = WAIT_RESPONSE;
-        time_state = WAIT_FOR_NTP_RETRY;
+        time_state = WAIT_NTP_STATE;
       }
       // fail
       else time_state = END_TIME;
@@ -471,7 +486,7 @@ void time_task() {
     case SET_SYNC_PROVIDER:
       #if (MODULE_TYPE == STIMA_MODULE_TYPE_SAMPLE_ETH || MODULE_TYPE == STIMA_MODULE_TYPE_REPORT_ETH)
       setSyncProvider(Ntp::getTime);
-      SERIAL_DEBUG("Current NTP date and time: %02u/%02u/%04u %02u:%02u:%02u\r\n", day(), month(), year(), hour(), minute(), second());
+      SERIAL_TRACE("Current NTP date and time: %02u/%02u/%04u %02u:%02u:%02u\r\n", day(), month(), year(), hour(), minute(), second());
       #endif
 
       time_state = SET_RTC_TIME;
@@ -481,7 +496,7 @@ void time_task() {
       Pcf8563::reset();
       Pcf8563::setDate(day(), month(), year()-2000, weekday()-1, 0);
       Pcf8563::setTime(hour(), minute(), second());
-      SERIAL_DEBUG("Current RTC date and time: %02u/%02u/%04u %02u:%02u:%02u\r\n", day(), month(), year(), hour(), minute(), second());
+      SERIAL_TRACE("Current RTC date and time: %02u/%02u/%04u %02u:%02u:%02u\r\n", day(), month(), year(), hour(), minute(), second());
       time_state = END_TIME;
       break;
 
@@ -507,7 +522,7 @@ void time_task() {
       time_state = INIT_TIME;
       break;
 
-    case WAIT_FOR_NTP_RETRY:
+    case WAIT_NTP_STATE:
       if (millis() - start_time_ms > delay_ms) {
         time_state = state_after_wait;
       }
@@ -538,7 +553,7 @@ void setNextTimeForSensorReading (uint8_t *next_hour, uint8_t *next_minute) {
     if (*next_hour > 23)
       *next_hour = *next_hour - 24;
 
-    SERIAL_DEBUG("Next acquisition scheduled at: %02u:%02u:00\r\n", *next_hour, *next_minute);
+    SERIAL_TRACE("Next acquisition scheduled at: %02u:%02u:00\r\n", *next_hour, *next_minute);
   }
 }
 
@@ -580,7 +595,7 @@ void ethernet_task() {
       SERIAL_INFO("\r\n");
 
       if (ethernetUdpClient.begin(ETHERNET_DEFAULT_LOCAL_UDP_PORT)) {
-        SERIAL_DEBUG("--> udp socket local port: %u [ OK ]\r\n", ETHERNET_DEFAULT_LOCAL_UDP_PORT);
+        SERIAL_TRACE("--> udp socket local port: %u [ OK ]\r\n", ETHERNET_DEFAULT_LOCAL_UDP_PORT);
       }
       else {
         SERIAL_ERROR("--> udp socket local port: %u [ FAIL ]\r\n", ETHERNET_DEFAULT_LOCAL_UDP_PORT);
@@ -591,13 +606,128 @@ void ethernet_task() {
       noInterrupts();
       is_event_ethernet = false;
       ready_tasks_count--;
-      is_event_time = true;
-      ready_tasks_count++;
       interrupts();
     }
   }
 }
 #endif
+
+// void sd_task() {
+//   static bool is_success;
+//   static uint8_t i;
+//   static uint8_t retry;
+//   static uint32_t delay_ms;
+//   static uint32_t start_time_ms;
+//   static sd_state_t state_after_wait;
+//
+//   switch (sd_state) {
+//     case INIT_SD:
+//       i = 0;
+//       retry = 0;
+//       is_success = true;
+//       strcpy(&files_name[i++][0], SDCARD_PTR_DATA_FILE_NAME);
+//       snprintf(&files_name[i++][0], SDCARD_FILES_NAME_MAX_LENGTH, "%04u_%02u_%02u.txt", 2017, 7, 3);
+//       // strcpy(&files_name[i++], SDCARD_PTR_DATA_FILE_NAME);
+//       i = 0;
+//       sd_state = OPEN_SD;
+//       break;
+//
+//     case OPEN_SD:
+//       // success
+//       if (SD.begin(SDCARD_CHIP_SELECT_PIN)) {
+//
+//         if (SD.vol()->fatType() == 0) {
+//           SERIAL_INFO("SD Card... [ FAIL ]\r\n--> Can't find a valid FAT16/FAT32 partition.\r\n\r\n");
+//           is_success = false;
+//           sd_state = END_SD;
+//         }
+//         else {
+//           SERIAL_INFO("SD Card... [ OK ]\r\n--> Found %u MB card.\r\n\r\n", (uint32_t)(0.000512 * SD.card()->cardSize()));
+//         }
+//
+//         retry = 0;
+//         sd_state = OPEN_FILES;
+//       }
+//       // retry
+//       else if (++retry < SDCARD_RETRY_MAX_COUNT) {
+//         delay_ms = SDCARD_RETRY_DELAY_MS;
+//         start_time_ms = millis();
+//         state_after_wait = OPEN_SD;
+//         sd_state = WAIT_SD_STATE;
+//       }
+//       // fail
+//       else {
+//         SERIAL_ERROR("SD Card... [ FAIL ]\r\n---> is card inserted?\r\n\r\n");
+//         is_success = false;
+//         sd_state = END_SD;
+//       }
+//       break;
+//
+//     case OPEN_FILES:
+//       files[i] = SD.open(files_name[i], FILE_WRITE);
+//
+//       // success
+//       if (files[i]) {
+//         SERIAL_INFO("Open file %s... [ OK ]\r\n\r\n", files_name[i]);
+//         // files[i].println("prova....");
+//         // files[i].flush();
+//         retry = 0;
+//
+//         if (++i >= SDCARD_FILES_COUNT)
+//           sd_state = END_SD;
+//       }
+//       // retry
+//       else if (++retry < SDCARD_RETRY_MAX_COUNT) {
+//         delay_ms = SDCARD_RETRY_DELAY_MS;
+//         start_time_ms = millis();
+//         state_after_wait = OPEN_FILES;
+//         sd_state = WAIT_SD_STATE;
+//       }
+//       // fail
+//       else {
+//         SERIAL_INFO("Open file %s... [ FAIL ]\r\n\r\n", files_name[i]);
+//         retry = 0;
+//
+//         if (++i >= SDCARD_FILES_COUNT)
+//           sd_state = END_SD;
+//       }
+//       break;
+//
+//     case END_SD:
+//       if (is_success) {
+//         noInterrupts();
+//         is_event_sd = false;
+//         ready_tasks_count--;
+//         interrupts();
+//       }
+//       else {
+//         delay_ms = SDCARD_RETRY_DELAY_MS*10;
+//         start_time_ms = millis();
+//         state_after_wait = INIT_SD;
+//         sd_state = WAIT_SD_STATE;
+//       }
+//       break;
+//
+//     case WAIT_SD_STATE:
+//       if (millis() - start_time_ms > delay_ms) {
+//         sd_state = state_after_wait;
+//       }
+//       break;
+//   }
+// }
+
+// char file_name[SDCARD_FILES_NAME_MAX_LENGTH];
+// case OPEN_SDCARD_FILES:
+//   if (SD.begin(SDCARD_CHIP_SELECT_PIN) && SD.vol()->fatType()) {
+//     snprintf(file_name, SDCARD_FILES_NAME_MAX_LENGTH, "%04u_%02u_%02u.txt", year(), month(), day());
+//     data_file = SD.open(file_name, FILE_WRITE);
+//     ptr_data_file = SD.open(SDCARD_PTR_DATA_FILE_NAME, FILE_WRITE);
+//
+//     if (data_file && ptr_data_file) {
+//       sensor_state = PREPARE_SENSOR;
+//     }
+//   }
+//   break;
 
 void sensors_reading_task () {
   static uint8_t i;
@@ -606,10 +736,12 @@ void sensors_reading_task () {
   static uint32_t delay_ms;
   static uint32_t start_time_ms;
   static int32_t values_readed_from_sensor[2];
+  static char json_string[JSON_BUFFER_LENGTH];
+  char data_string[VALUES_TO_READ_FROM_SENSOR_COUNT][MQTT_ROOT_PATH_LENGTH + MQTT_SENSOR_PATH_LENGTH];
 
   switch (sensor_state) {
     case INIT_SENSOR:
-      for (i=0; i<sensors_count; i++)
+      for (i=0; i<USE_SENSORS_COUNT; i++)
         sensors[i]->resetPrepared();
 
       i = 0;
@@ -627,7 +759,7 @@ void sensors_reading_task () {
       delay_ms = sensors[i]->getDelay();
       start_time_ms = sensors[i]->getStartTime();
       state_after_wait = IS_SENSOR_PREPARED;
-      sensor_state = WAIT_STATE;
+      sensor_state = WAIT_SENSOR_STATE;
       break;
 
     case IS_SENSOR_PREPARED:
@@ -640,18 +772,19 @@ void sensors_reading_task () {
         delay_ms = SENSORS_RETRY_DELAY_MS;
         start_time_ms = millis();
         state_after_wait = PREPARE_SENSOR;
-        sensor_state = WAIT_STATE;
+        sensor_state = WAIT_SENSOR_STATE;
       }
       // fail
       else sensor_state = END_SENSOR_READING;
       break;
 
     case GET_SENSOR:
-      sensors[i]->get(values_readed_from_sensor, VALUES_TO_READ_FROM_SENSOR_COUNT);
+      sensors[i]->getJson(values_readed_from_sensor, VALUES_TO_READ_FROM_SENSOR_COUNT, json_string);
+      // sensors[i]->get(values_readed_from_sensor, VALUES_TO_READ_FROM_SENSOR_COUNT);
       delay_ms = sensors[i]->getDelay();
       start_time_ms = sensors[i]->getStartTime();
       state_after_wait = IS_SENSOR_GETTED;
-      sensor_state = WAIT_STATE;
+      sensor_state = WAIT_SENSOR_STATE;
       break;
 
     case IS_SENSOR_GETTED:
@@ -668,13 +801,19 @@ void sensors_reading_task () {
         delay_ms = SENSORS_RETRY_DELAY_MS;
         start_time_ms = millis();
         state_after_wait = GET_SENSOR;
-        sensor_state = WAIT_STATE;
+        sensor_state = WAIT_SENSOR_STATE;
       }
       // fail
       else sensor_state = END_SENSOR_READING;
       break;
 
     case READ_SENSOR:
+      #if (USE_SENSOR_TBS || USE_SENSOR_TBR)
+      if ((strcmp(sensors[i]->getType(), SENSOR_TYPE_TBS) == 0) || (strcmp(sensors[i]->getType(), SENSOR_TYPE_TBR) == 0)) {
+        rain.tips_count = values_readed_from_sensor[0];
+      }
+      #endif
+
       #if (USE_SENSOR_STH)
       if (strcmp(sensors[i]->getType(), SENSOR_TYPE_STH) == 0) {
         temperature.sample = values_readed_from_sensor[0];
@@ -710,38 +849,36 @@ void sensors_reading_task () {
       }
       #endif
 
-      #if (USE_SENSOR_TBS || USE_SENSOR_TBR)
-      if ((strcmp(sensors[i]->getType(), SENSOR_TYPE_TBS) == 0) || (strcmp(sensors[i]->getType(), SENSOR_TYPE_TBR) == 0)) {
-        rain.tips_count = values_readed_from_sensor[0];
+      if (!is_first_run) {
+        uint8_t data_count = makeRmapSensorString(data_string, json_string, configuration.mqtt_root_path, configuration.sensors[i].mqtt_path);
+        #if (SERIAL_TRACE_LEVEL >= SERIAL_TRACE_LEVEL_DEBUG)
+        for (uint8_t k=0; k<data_count; k++)
+          SERIAL_INFO("%s\r\n", &data_string[k][0]);
+        #endif
       }
-      #endif
+
       sensor_state = END_SENSOR_READING;
       break;
 
     case END_SENSOR_READING:
       // next sensor
-      if ((++i) < sensors_count) {
+      if ((++i) < USE_SENSORS_COUNT) {
         retry = 0;
-        // delay_ms = 0;
-        // start_time_ms = millis();
-        // state_after_wait = PREPARE_SENSOR;
-        // sensor_state = WAIT_STATE;
         sensor_state = PREPARE_SENSOR;
       }
-      // end
       else {
         if (is_first_run) {
+          #if (SERIAL_TRACE_LEVEL == SERIAL_TRACE_LEVEL_INFO)
           SERIAL_INFO("DATE      \tTIME    \tT-IST\tT-MIN\tT-MED\tT-MAX\tH-IST\tH-MIN\tH-MED\tH-MAX\tR-TPS\r\n");
+          #elif (SERIAL_TRACE_LEVEL >= SERIAL_TRACE_LEVEL_DEBUG)
+          SERIAL_DEBUG("Start acquisition....\r\n\r\n");
+          #endif
           is_first_run = false;
         }
         else {
-          #if (SERIAL_TRACE_LEVEL >= SERIAL_TRACE_LEVEL_INFO)
+          #if (SERIAL_TRACE_LEVEL == SERIAL_TRACE_LEVEL_INFO)
           SERIAL_INFO("%02u/%02u/%04u\t", sensor_reading_day, sensor_reading_month, sensor_reading_year);
           SERIAL_INFO("%02u:%02u:00\t", sensor_reading_hour, sensor_reading_minute);
-
-          // if (temperature.sample != UINT16_MAX)
-            // SERIAL_INFO("%u\t", temperature.sample);
-          // else SERIAL_INFO("-----\t");
 
           if (temperature.med60 != UINT16_MAX)
             SERIAL_INFO("%u\t", temperature.med60);
@@ -758,10 +895,6 @@ void sensors_reading_task () {
           if (temperature.max != UINT16_MAX)
             SERIAL_INFO("%u\t", temperature.max);
           else SERIAL_INFO("-----\t");
-
-          // if (humidity.sample != UINT16_MAX)
-          //   SERIAL_INFO("%u\t", humidity.sample);
-          // else SERIAL_INFO("---\t");
 
           if (humidity.med60 != UINT16_MAX)
             SERIAL_INFO("%u\t", humidity.med60);
@@ -782,14 +915,16 @@ void sensors_reading_task () {
           if (rain.tips_count != UINT16_MAX)
             SERIAL_INFO("%u\r\n", rain.tips_count);
           else SERIAL_INFO("-----\r\n");
+          #elif (SERIAL_TRACE_LEVEL >= SERIAL_TRACE_LEVEL_DEBUG)
+          SERIAL_DEBUG("\r\n");
           #endif
         }
 
-        #if (SERIAL_TRACE_LEVEL >= SERIAL_TRACE_LEVEL_INFO)
+        #if (SERIAL_TRACE_LEVEL == SERIAL_TRACE_LEVEL_INFO)
         delay_ms = 10;
         start_time_ms = millis();
         state_after_wait = END_TASK;
-        sensor_state = WAIT_STATE;
+        sensor_state = WAIT_SENSOR_STATE;
         #else
         sensor_state = END_TASK;
         #endif
@@ -807,10 +942,27 @@ void sensors_reading_task () {
     case END_SENSOR:
       break;
 
-    case WAIT_STATE:
+    case WAIT_SENSOR_STATE:
       if (millis() - start_time_ms > delay_ms) {
         sensor_state = state_after_wait;
       }
       break;
   }
+}
+
+uint8_t makeRmapSensorString(char data_string[][MQTT_ROOT_PATH_LENGTH + MQTT_SENSOR_PATH_LENGTH], const char *json, const char *mqtt_root, const char *mqtt_sensor) {
+  uint8_t i = 0;
+  memset(data_string, 0, sizeof(data_string[0][0]) * (MQTT_ROOT_PATH_LENGTH + MQTT_SENSOR_PATH_LENGTH) * VALUES_TO_READ_FROM_SENSOR_COUNT);
+
+  StaticJsonBuffer<JSON_BUFFER_LENGTH> buffer;
+  JsonObject &root = buffer.parseObject(json);
+
+  for (JsonObject::iterator it=root.begin(); it!=root.end(); ++it) {
+    snprintf(&data_string[i][0], MQTT_ROOT_PATH_LENGTH + MQTT_SENSOR_PATH_LENGTH, "%s%s", mqtt_root, mqtt_sensor);
+    snprintf(&data_string[i][0]+strlen(&data_string[i][0]), MQTT_ROOT_PATH_LENGTH + MQTT_SENSOR_PATH_LENGTH - strlen(&data_string[i][0]), "%s {\"v\":%ld,\"t\":\"", it->key, it->value.as<int32_t>());
+    snprintf(&data_string[i][0]+strlen(&data_string[i][0]), MQTT_ROOT_PATH_LENGTH + MQTT_SENSOR_PATH_LENGTH - strlen(&data_string[i][0]), "%04u-%02u-%02uT%02u:%02u:00\"}", sensor_reading_year, sensor_reading_month, sensor_reading_day, sensor_reading_hour, sensor_reading_minute);
+    i++;
+  }
+
+  return i;
 }

@@ -64,7 +64,7 @@ void power_down(uint32_t *);
 #define WDT_ERROR_MAX                 (0.2)
 #endif
 
-#define executeWdtTaskEach(timer)				(timer % WDT_OFFSET == 0 ? (wdt_timer.value % timer == 0 ? 1 : 0) : 0)
-#define executeRtcTaskEach(timer)				(timer % RTC_TIMER == 0 ? (rtc_timer.value % timer == 0 ? 1 : 0) : 0)
+#define executeWdtTaskEach(timer)		  (timer % WDT_OFFSET == 0 ? (wdt_timer.value % timer == 0 ? 1 : 0) : 0)
+#define executeRtcTaskEach(timer)			(timer % RTC_TIMER == 0 ? (rtc_timer.value % timer == 0 ? 1 : 0) : 0)
 
 #endif

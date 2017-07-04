@@ -30,7 +30,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include <Time.h>
 #include <typedef.h>
 #include <SensorDriver.h>
-// #include <SdFat.h>
+#include <SdFat.h>
 
 #if (MODULE_TYPE == STIMA_MODULE_TYPE_SAMPLE_ETH || MODULE_TYPE == STIMA_MODULE_TYPE_REPORT_ETH)
 #include <ethernet_config.h>
@@ -55,6 +55,8 @@ typedef struct {
   uint8_t module_version;   //!< module version saved in eeprom. If matching the MODULE_VERSION, the configuration is up to date
   uint8_t i2c_rain_address;
   uint8_t i2c_th_address;
+
+  sensor_t sensors[USE_SENSORS_COUNT];
 
   #if (MODULE_TYPE == STIMA_MODULE_TYPE_SAMPLE_ETH || MODULE_TYPE == STIMA_MODULE_TYPE_REPORT_ETH)
   bool is_dhcp_enable;
@@ -90,6 +92,8 @@ typedef struct {
 typedef struct {
   uint8_t i2c_rain_address;
   uint8_t i2c_th_address;
+
+  sensor_t sensors[USE_SENSORS_COUNT];
 
   #if (MODULE_TYPE == STIMA_MODULE_TYPE_SAMPLE_ETH || MODULE_TYPE == STIMA_MODULE_TYPE_REPORT_ETH)
   bool is_dhcp_enable;
@@ -143,7 +147,7 @@ typedef enum {
   END_SENSOR_READING,
   END_TASK,
   END_SENSOR,
-  WAIT_STATE
+  WAIT_SENSOR_STATE
 } sensor_state_t;
 
 typedef enum {
@@ -153,8 +157,16 @@ typedef enum {
   SET_SYNC_PROVIDER,
   SET_RTC_TIME,
   END_TIME,
-  WAIT_FOR_NTP_RETRY
+  WAIT_NTP_STATE
 } time_state_t;
+
+typedef enum {
+  INIT_SD,
+  OPEN_SD,
+  OPEN_FILES,
+  END_SD,
+  WAIT_SD_STATE
+} sd_state_t;
 
 /**********************************************************************
  * GLOBAL VARIABLE
@@ -225,6 +237,10 @@ volatile uint8_t ready_tasks_count;
 */
 uint32_t awakened_event_occurred_time_ms;
 
+SdFat SD;
+File data_file;
+File ptr_data_file;
+
 #if (MODULE_TYPE == STIMA_MODULE_TYPE_SAMPLE_ETH || MODULE_TYPE == STIMA_MODULE_TYPE_REPORT_ETH)
 uint32_t ethernet_task_attempt_occurred_time_ms;
 EthernetUDP ethernetUdpClient;
@@ -232,6 +248,8 @@ EthernetUDP ethernetUdpClient;
 
 SensorDriver *sensors[USE_SENSORS_COUNT];
 uint8_t sensors_count;
+bool is_sensors_prepared[USE_SENSORS_COUNT];
+bool is_sensors_setted[USE_SENSORS_COUNT];
 
 uint8_t sensors_end_readings_count = 0;
 uint32_t absolute_millis_for_sensors_read_ms;
@@ -248,10 +266,6 @@ bool is_sensors_th_prepared;
 bool is_sensors_th_setted;
 #endif
 
-#if (USE_JSON)
-char json_buffer[JSON_BUFFER_LENGTH];
-#endif
-
 value_t temperature;
 value_t humidity;
 rain_t rain;
@@ -264,6 +278,7 @@ uint16_t sensor_reading_year;
 uint8_t sensor_reading_hour;
 uint8_t sensor_reading_minute;
 
+sd_state_t sd_state;
 time_state_t time_state;
 sensor_state_t sensor_state;
 
@@ -301,6 +316,7 @@ void save_configuration(bool);
 void init_sensors(void);
 
 void setNextTimeForSensorReading(uint8_t *, uint8_t *);
+uint8_t makeRmapSensorString(char [][MQTT_ROOT_PATH_LENGTH + MQTT_SENSOR_PATH_LENGTH], const char *, const char *, const char *);
 
 /**********************************************************************
  * TASKS
@@ -351,6 +367,14 @@ void ethernet_task(void);
 
 bool is_event_ethernet;
 #endif
+
+/*! \fn void sd_task(void)
+ *  \brief manage sd card and files.
+ *  \return void.
+ */
+void sd_task(void);
+
+bool is_event_sd;
 
 /**********************************************************************
  * INTERRUPT HANDLER

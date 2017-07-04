@@ -79,4 +79,12 @@ char *trace_printf_array(void *data, int16_t length, uint8_t type, const char *f
   #define SERIAL_DEBUG_ARRAY(...)
 #endif
 
+#if (SERIAL_TRACE_LEVEL >= SERIAL_TRACE_LEVEL_TRACE)
+  #define SERIAL_TRACE(...) _SERIAL_PRINT(NULL, __VA_ARGS__)
+  #define SERIAL_TRACE_ARRAY(...) _SERIAL_PRINT_ARRAY(__VA_ARGS__)
+#else
+  #define SERIAL_TRACE(...)
+  #define SERIAL_TRACE_ARRAY(...)
+#endif
+
 #endif

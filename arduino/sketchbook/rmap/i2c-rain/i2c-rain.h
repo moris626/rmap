@@ -196,6 +196,20 @@ bool is_stop;
 bool is_oneshot;
 bool is_continuous;
 
+rain_t rain;
+
+/**********************************************************************
+ * FUNCTIONS
+ *********************************************************************/
+void init_systems(void);
+void init_buffers(void);
+void init_tasks(void);
+void init_pins(void);
+void init_wire(void);
+void init_spi(void);
+void init_rtc(void);
+void init_sensors(void);
+
 /*! \fn void print_configuration(void)
  *  \brief Print configuration.
  *  \return void.
@@ -215,12 +229,6 @@ void load_configuration(void);
  */
 void save_configuration(bool);
 
-/*! \fn void exec_command(void)
- *  \brief Executes the command received on i2c bus.
- *  \return void.
- */
-void exec_command(void);
-
 void commands(void);
 
 void reset_buffers(void);
@@ -237,13 +245,13 @@ volatile bool is_event_tipping_bucket;
  */
 void tipping_bucket_task(void);
 
-volatile bool is_event_i2c_receive;
+volatile bool is_event_command_task;
 
-/*! \fn void i2c_receive_task(void)
- *  \brief I2C receive task.
+/*! \fn void command_task(void)
+ *  \brief Executes the command received on i2c bus.
  *  \return void.
  */
-void i2c_receive_task(void);
+void command_task(void);
 
 #if (USE_WDT_TASK)
 volatile bool is_event_wdt;

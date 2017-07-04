@@ -17,6 +17,9 @@ You should have received a copy of the GNU General Public License
 along with this program.  If not, see <http://www.gnu.org/licenses/>.
 **********************************************************************/
 
+#ifndef _RMAP_CONFIG_H
+#define _RMAP_CONFIG_H
+
 #include <sensors_config.h>
 
 /**********************************************************************
@@ -40,6 +43,36 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 */
 #define USE_POWER_DOWN                              (false)
 
+/*!
+  \def SDCARD_RETRY_MAX_COUNT
+  Retry count for sd card
+*/
+#define SDCARD_RETRY_MAX_COUNT                      (5)
+
+/*!
+  \def SDCARD_FILES_COUNT
+  Number of files
+*/
+#define SDCARD_FILES_COUNT                          (2)
+
+/*!
+  \def SDCARD_FILES_NAME_MAX_LENGTH
+  Max length of filename
+*/
+#define SDCARD_FILES_NAME_MAX_LENGTH                (20)
+
+/*!
+  \def SDCARD_RETRY_DELAY_MS
+  Delay for retry in sd card management
+*/
+#define SDCARD_RETRY_DELAY_MS                       (3000)
+
+/*!
+  \def SDCARD_PTR_DATA_FILE_NAME
+  Pointer for sensor data
+*/
+#define SDCARD_PTR_DATA_FILE_NAME                   ("ptr_data.txt")
+
 #if (MODULE_TYPE == STIMA_MODULE_TYPE_SAMPLE_ETH || MODULE_TYPE == STIMA_MODULE_TYPE_REPORT_ETH)
 /*!
   \def W5500_CHIP_SELECT_PIN
@@ -48,8 +81,6 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #define W5500_CHIP_SELECT_PIN                       (8)
 
 #define W5500_RESET_PIN                             (4)
-
-#define SDCARD_CHIP_SELECT_PIN                      (7)
 
 /*!
   \def NTP_RETRY_MAX_COUNT
@@ -250,4 +281,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 #if (USE_SENSORS_COUNT == 0)
 #error No sensor used. Are you sure? If not, enable it in RmapConfig/sensors_config.h
+#else
+#endif
+
 #endif

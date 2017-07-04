@@ -33,7 +33,7 @@ void setup() {
 
   // enable watchdog with timeout to 8s
   wdt_enable(WDTO_8S);
-  
+
   Serial.begin(115200);
   Serial.println("Start...");
   SPI.begin();
@@ -133,13 +133,13 @@ void loop() {
       Serial.println(millis()-start);
       start= millis();
       wdt_reset();
-      
+
       while (client.publish("test/prova","hello world")) {
         wdt_reset();
-        
+
         dataFile.println("Writing in sdcard....");
         dataFile.flush();
-        
+
         Serial.println("published");
         Serial.println(millis()-start);
         start= millis();
@@ -150,12 +150,11 @@ void loop() {
       }
       Serial.println("ERRORE publish MQTT");
       wdt_reset();
-      client.disconnect();  
+      client.disconnect();
       Serial.println("disconnected");
       wdt_reset();
       delay(2000);
       wdt_reset();
     }
-  } 
+  }
 }
-

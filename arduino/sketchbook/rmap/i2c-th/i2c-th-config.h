@@ -138,7 +138,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 #define VALUES_TO_READ_FROM_SENSOR_COUNT            (2)
 #define SENSORS_RETRY_COUNT_MAX                     (5)
-#define SENSORS_RETRY_DELAY_MS                      (200)
+#define SENSORS_RETRY_DELAY_MS                      (50)
 
 #define USE_SENSORS_COUNT                           (USE_SENSOR_ADT + USE_SENSOR_HIH + USE_SENSOR_HYT)
 #if (USE_SENSORS_COUNT == 0)

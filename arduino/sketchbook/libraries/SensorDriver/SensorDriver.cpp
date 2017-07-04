@@ -4,21 +4,39 @@
 
 #include "SensorDriver.h"
 
+namespace _SensorDriver {
+  #if (USE_SENSOR_HYT)
+  bool _is_hyt_setted;
+  bool _is_hyt_prepared;
+  #endif
+
+  #if (USE_SENSOR_TBS || USE_SENSOR_TBR)
+  bool _is_tb_setted;
+  bool _is_tb_prepared;
+  #endif
+
+  #if (USE_SENSOR_STH || USE_SENSOR_ITH || USE_SENSOR_MTH || USE_SENSOR_NTH || USE_SENSOR_XTH)
+  bool _is_th_setted;
+  bool _is_th_prepared;
+  #endif
+}
+
 //------------------------------------------------------------------------------
 // SensorDriver
 //------------------------------------------------------------------------------
 
-SensorDriver::SensorDriver(const char* driver, const char* type, bool *is_setted, bool *is_prepared) {
+// SensorDriver::SensorDriver(const char* driver, const char* type, bool *is_setted, bool *is_prepared) {
+SensorDriver::SensorDriver(const char* driver, const char* type) {
   _driver = driver;
   _type = type;
-  _is_setted = is_setted;
-  *is_setted = false;
-  _is_prepared = is_prepared;
-  *_is_prepared = false;
-  _retry = 0;
+  // _is_setted = is_setted;
+  // *is_setted = false;
+  // _is_prepared = is_prepared;
+  // *is_prepared = false;
 }
 
-SensorDriver *SensorDriver::create(const char* driver, const char* type, bool *is_setted, bool *is_prepared) {
+// SensorDriver *SensorDriver::create(const char* driver, const char* type, bool *is_setted, bool *is_prepared) {
+SensorDriver *SensorDriver::create(const char* driver, const char* type) {
   if (strlen(driver) == 0 || strlen(type) == 0) {
     SERIAL_ERROR("SensorDriver %s-%s create... [ FAIL ]\r\n--> driver or type is null.\r\n", driver, type);
     return NULL;
@@ -26,67 +44,70 @@ SensorDriver *SensorDriver::create(const char* driver, const char* type, bool *i
 
   #if (USE_SENSOR_ADT)
   else if (strcmp(type, SENSOR_TYPE_ADT) == 0)
-    return new SensorDriverHyt271(driver, type, is_setted, is_prepared);
+    // return new SensorDriverHyt271(driver, type, is_setted, is_prepared);
+    return new SensorDriverHyt271(driver, type, &_SensorDriver::_is_hyt_setted, &_SensorDriver::_is_hyt_prepared);
   #endif
 
   #if (USE_SENSOR_HIH)
   else if (strcmp(type, SENSOR_TYPE_HIH) == 0)
-    return new SensorDriverHyt271(driver, type, is_setted, is_prepared);
+    return new SensorDriverHyt271(driver, type, &_SensorDriver::_is_hyt_setted, &_SensorDriver::_is_hyt_prepared);
   #endif
 
   #if (USE_SENSOR_HYT)
   else if (strcmp(type, SENSOR_TYPE_HYT) == 0)
-    return new SensorDriverHyt271(driver, type, is_setted, is_prepared);
+    return new SensorDriverHyt271(driver, type, &_SensorDriver::_is_hyt_setted, &_SensorDriver::_is_hyt_prepared);
   #endif
 
   #if (USE_SENSOR_HI7)
   else if (strcmp(type, SENSOR_TYPE_HI7) == 0)
-    return new SensorDriverHyt271(driver, type, is_setted, is_prepared);
+    return new SensorDriverHyt271(driver, type, &_SensorDriver::_is_hyt_setted, &_SensorDriver::_is_hyt_prepared);
   #endif
 
   #if (USE_SENSOR_BMP)
   else if (strcmp(type, SENSOR_TYPE_BMP) == 0)
-    return new SensorDriverHyt271(driver, type, is_setted, is_prepared);
+    return new SensorDriverHyt271(driver, type, &_SensorDriver::_is_hyt_setted, &_SensorDriver::_is_hyt_prepared);
   #endif
 
   #if (USE_SENSOR_DW1)
   else if (strcmp(type, SENSOR_TYPE_DW1) == 0)
-    return new SensorDriverHyt271(driver, type, is_setted, is_prepared);
+    return new SensorDriverHyt271(driver, type, &_SensorDriver::_is_hyt_setted, &_SensorDriver::_is_hyt_prepared);
   #endif
 
   #if (USE_SENSOR_TBS || USE_SENSOR_TBR)
   else if (strcmp(type, SENSOR_TYPE_TBS) == 0 || strcmp(type, SENSOR_TYPE_TBR) == 0)
-    return new SensorDriverRain(driver, type, is_setted, is_prepared);
+    // return new SensorDriverRain(driver, type, is_setted, is_prepared);
+    return new SensorDriverRain(driver, type, &_SensorDriver::_is_tb_setted, &_SensorDriver::_is_tb_prepared);
   #endif
 
   #if (USE_SENSOR_STH || USE_SENSOR_ITH || USE_SENSOR_MTH || USE_SENSOR_NTH || USE_SENSOR_XTH)
   else if (strcmp(type, SENSOR_TYPE_STH) == 0 || strcmp(type, SENSOR_TYPE_ITH) == 0 || strcmp(type, SENSOR_TYPE_MTH) == 0 || strcmp(type, SENSOR_TYPE_NTH) == 0 || strcmp(type, SENSOR_TYPE_XTH) == 0)
-    return new SensorDriverTh(driver, type, is_setted, is_prepared);
+    // return new SensorDriverTh(driver, type, is_setted, is_prepared);
+    return new SensorDriverTh(driver, type, &_SensorDriver::_is_th_setted, &_SensorDriver::_is_th_prepared);
   #endif
 
   #if (USE_SENSOR_SSD)
   else if (strcmp(type, SENSOR_TYPE_SSD) == 0)
-    return new SensorDriverHyt271(driver, type, is_setted, is_prepared);
+    return new SensorDriverHyt271(driver, type, &_SensorDriver::_is_hyt_setted, &_SensorDriver::_is_hyt_prepared);
   #endif
 
   #if (USE_SENSOR_ISD)
   else if (strcmp(type, SENSOR_TYPE_ISD) == 0)
-    return new SensorDriverHyt271(driver, type, is_setted, is_prepared);
+    return new SensorDriverHyt271(driver, type, &_SensorDriver::_is_hyt_setted, &_SensorDriver::_is_hyt_prepared);
   #endif
 
   #if (USE_SENSOR_MSD)
   else if (strcmp(type, SENSOR_TYPE_MSD) == 0)
-    return new SensorDriverHyt271(driver, type, is_setted, is_prepared);
+    return new SensorDriverHyt271(driver, type, &_SensorDriver::_is_hyt_setted, &_SensorDriver::_is_hyt_prepared);
   #endif
 
   #if (USE_SENSOR_NSD)
   else if (strcmp(type, SENSOR_TYPE_NSD) == 0)
-    return new SensorDriverHyt271(driver, type, is_setted, is_prepared);
+    return new SensorDriverHyt271(driver, type, &_SensorDriver::_is_hyt_setted, &_SensorDriver::_is_hyt_prepared);
   #endif
 
   #if (USE_SENSOR_XSD)
   else if (strcmp(type, SENSOR_TYPE_XSD) == 0)
-    return new SensorDriverHyt271(driver, type, is_setted, is_prepared);
+    return new SensorDriverHyt271(driver, type, &_SensorDriver::_is_hyt_setted, &_SensorDriver::_is_hyt_prepared);
   #endif
 
   else {
@@ -125,15 +146,6 @@ uint32_t SensorDriver::getStartTime() {
   return _start_time_ms;
 }
 
-bool SensorDriver::isPrepared() {
-  return *_is_prepared;
-}
-
-void SensorDriver::resetPrepared() {
-  *_is_prepared = false;
-  _retry = 0;
-}
-
 bool SensorDriver::isEnd() {
   return _is_end;
 }
@@ -146,8 +158,17 @@ bool SensorDriver::isReaded() {
   return _is_readed;
 }
 
-void SensorDriver::createAndSetup(const char* driver, const char* type, bool *is_setted, bool *is_prepared, uint8_t address, SensorDriver *sensors[], uint8_t *sensors_count) {
-  sensors[*sensors_count] = SensorDriver::create(driver, type, is_setted, is_prepared);
+// void SensorDriver::resetPrepared() {
+//   *_is_prepared = false;
+// }
+//
+// bool SensorDriver::isPrepared() {
+//   return *_is_prepared;
+// }
+
+// void SensorDriver::createAndSetup(const char* driver, const char* type, bool *is_setted, bool *is_prepared, uint8_t address, SensorDriver *sensors[], uint8_t *sensors_count) {
+void SensorDriver::createAndSetup(const char* driver, const char* type, uint8_t address, SensorDriver *sensors[], uint8_t *sensors_count) {
+  sensors[*sensors_count] = SensorDriver::create(driver, type);
   if (sensors[*sensors_count]) {
     sensors[*sensors_count]->setup(address);
     (*sensors_count)++;
@@ -169,8 +190,19 @@ void SensorDriver::printInfo(const char* driver, const char* type, const uint8_t
 //------------------------------------------------------------------------------
 // HYT271
 //------------------------------------------------------------------------------
-
 #if (USE_SENSOR_HYT)
+bool SensorDriverHyt271::isSetted() {
+  return *_is_setted;
+}
+
+bool SensorDriverHyt271::isPrepared() {
+  return *_is_prepared;
+}
+
+void SensorDriverHyt271::resetPrepared() {
+  *_is_prepared = false;
+}
+
 void SensorDriverHyt271::setup(const uint8_t address, const uint8_t node) {
   SensorDriver::setup(address, node);
 
@@ -285,13 +317,11 @@ void SensorDriverHyt271::getJson(int32_t *values, uint8_t length, char *json_buf
 
   SensorDriverHyt271::get(values, length);
 
-  if (_is_end && _is_success && values[0] != UINT16_MAX && !_is_readed && length >= 1)
+  // if (_is_end && !_is_readed && length >= 1)
     json["B13003"] = values[0];
-  else json["B13003"] = (char*)NULL;
 
-  if (_is_end && _is_success && values[1] != UINT16_MAX && !_is_readed && length >= 2)
+  // if (_is_end && !_is_readed && length >= 2)
     json["B12101"] = values[1];
-  else json["B12101"] = (char*)NULL;
 
   json.printTo(json_buffer, json_buffer_length);
 }
@@ -306,6 +336,18 @@ void SensorDriverHyt271::getJson(int32_t *values, uint8_t length, char *json_buf
 //------------------------------------------------------------------------------
 
 #if (USE_SENSOR_TBS || USE_SENSOR_TBR)
+bool SensorDriverRain::isSetted() {
+  return *_is_setted;
+}
+
+bool SensorDriverRain::isPrepared() {
+  return *_is_prepared;
+}
+
+void SensorDriverRain::resetPrepared() {
+  *_is_prepared = false;
+}
+
 void SensorDriverRain::setup(const uint8_t address, const uint8_t node) {
   SensorDriver::setup(address, node);
 
@@ -313,6 +355,7 @@ void SensorDriverRain::setup(const uint8_t address, const uint8_t node) {
   SensorDriver::printInfo(_driver, _type, _address, _node);
   #endif
 
+  *_is_setted = true;
   SERIAL_DEBUG(" setup... [ OK ]\r\n");
 }
 
@@ -453,9 +496,8 @@ void SensorDriverRain::getJson(int32_t *values, uint8_t length, char *json_buffe
 
   SensorDriverRain::get(values, length);
 
-  if (_is_end && _is_success && values[0] != UINT16_MAX && !_is_readed && length >= 1)
+  if (_is_end && !_is_readed && length >= 1)
     json["B13011"] = values[0];
-  else json["B13011"] = (char*)NULL;
 
   json.printTo(json_buffer, json_buffer_length);
 }
@@ -473,6 +515,18 @@ void SensorDriverRain::getJson(int32_t *values, uint8_t length, char *json_buffe
 //------------------------------------------------------------------------------
 
 #if (USE_SENSOR_STH || USE_SENSOR_ITH || USE_SENSOR_MTH || USE_SENSOR_NTH || USE_SENSOR_XTH)
+bool SensorDriverTh::isSetted() {
+  return *_is_setted;
+}
+
+bool SensorDriverTh::isPrepared() {
+  return *_is_prepared;
+}
+
+void SensorDriverTh::resetPrepared() {
+  *_is_prepared = false;
+}
+
 void SensorDriverTh::setup(const uint8_t address, const uint8_t node) {
   SensorDriver::setup(address, node);
 
@@ -764,13 +818,11 @@ void SensorDriverTh::getJson(int32_t *values, uint8_t length, char *json_buffer,
 
   SensorDriverTh::get(values, length);
 
-  if (_is_end && _is_success && values[0] != UINT16_MAX && !_is_readed && length >= 1)
+  if (_is_end && !_is_readed && length >= 1)
     json["B12101"] = values[0];
-  else json["B12101"] = (char*)NULL;
 
-  if (_is_end && _is_success && values[1] != UINT16_MAX && !_is_readed && length >= 2)
-    json["B13003"] = values[0];
-  else json["B13003"] = (char*)NULL;
+  if (_is_end && !_is_readed && length >= 2)
+    json["B13003"] = values[1];
 
   json.printTo(json_buffer, json_buffer_length);
 }

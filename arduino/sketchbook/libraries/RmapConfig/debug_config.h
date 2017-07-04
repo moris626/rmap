@@ -7,6 +7,7 @@
 #define SERIAL_TRACE_LEVEL_WARNING        (2)
 #define SERIAL_TRACE_LEVEL_INFO           (3)
 #define SERIAL_TRACE_LEVEL_DEBUG          (4)
+#define SERIAL_TRACE_LEVEL_TRACE          (5)
 
 // LCD debug level definitions
 #define LCD_TRACE_LEVEL_OFF               (0)
@@ -25,6 +26,6 @@
 #define I2C_RAIN_SERIAL_TRACE_LEVEL       (SERIAL_TRACE_LEVEL_INFO)
 
 // rmap
-#define RMAP_SERIAL_TRACE_LEVEL           (SERIAL_TRACE_LEVEL_INFO)
+#define RMAP_SERIAL_TRACE_LEVEL           (SERIAL_TRACE_LEVEL_DEBUG)
 
 #endif

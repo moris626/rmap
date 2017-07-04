@@ -22,7 +22,6 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 #define I2C_BUS_CLOCK                   (50000L)
 #define I2C_MAX_DATA_LENGTH             (32)
-#define DEBOUNCING_POWER_DOWN_TIME_MS   (10)
-
+#define DEBOUNCING_POWER_DOWN_TIME_MS   (100)
 
 #endif
