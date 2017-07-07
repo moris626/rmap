@@ -22,7 +22,6 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include <hardware_config.h>
 #include <mqtt_config.h>
 #include <ntp_config.h>
-#include <rmap_util.h>
 #include <sleep_utility.h>
 #include <eeprom_utility.h>
 #include <Wire.h>
@@ -30,7 +29,12 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include <Time.h>
 #include <typedef.h>
 #include <SensorDriver.h>
+#include <json_config.h>
+#include <rmap_util.h>
 #include <SdFat.h>
+#include <IPStack.h>
+#include <Countdown.h>
+#include <MQTTClient.h>
 
 #if (MODULE_TYPE == STIMA_MODULE_TYPE_SAMPLE_ETH || MODULE_TYPE == STIMA_MODULE_TYPE_REPORT_ETH)
 #include <ethernet_config.h>
@@ -53,8 +57,13 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 typedef struct {
   uint8_t module_type;      //!< module type saved in eeprom. If matching the MODULE_TYPE, the configuration is up to date
   uint8_t module_version;   //!< module version saved in eeprom. If matching the MODULE_VERSION, the configuration is up to date
-  uint8_t i2c_rain_address;
-  uint8_t i2c_th_address;
+
+  uint16_t mqtt_port;
+  char mqtt_server[MQTT_SERVER_LENGTH];
+  char mqtt_root_topic[MQTT_ROOT_TOPIC_LENGTH];
+  char mqtt_subscribe_topic[MQTT_SUBSCRIBE_TOPIC_LENGTH];
+  char mqtt_username[MQTT_USERNAME_LENGTH];
+  char mqtt_password[MQTT_PASSWORD_LENGTH];
 
   sensor_t sensors[USE_SENSORS_COUNT];
 
@@ -65,13 +74,8 @@ typedef struct {
   uint8_t netmask[ETHERNET_IP_LENGTH];
   uint8_t gateway[ETHERNET_IP_LENGTH];
   uint8_t primary_dns[ETHERNET_IP_LENGTH];
-  #endif
-
-  char mqtt_server[MQTT_SERVER_LENGTH];
-  char mqtt_root_path[MQTT_ROOT_PATH_LENGTH];
-  char mqtt_username[MQTT_USERNAME_LENGTH];
-  char mqtt_password[MQTT_PASSWORD_LENGTH];
   char ntp_server[NTP_SERVER_LENGTH];
+  #endif
 } configuration_t;
 
 /*!
@@ -90,8 +94,12 @@ typedef struct {
   Writable data through i2c bus.
 */
 typedef struct {
-  uint8_t i2c_rain_address;
-  uint8_t i2c_th_address;
+  uint16_t mqtt_port;
+  char mqtt_server[MQTT_SERVER_LENGTH];
+  char mqtt_root_topic[MQTT_ROOT_TOPIC_LENGTH];
+  char mqtt_subscribe_topic[MQTT_SUBSCRIBE_TOPIC_LENGTH];
+  char mqtt_username[MQTT_USERNAME_LENGTH];
+  char mqtt_password[MQTT_PASSWORD_LENGTH];
 
   sensor_t sensors[USE_SENSORS_COUNT];
 
@@ -102,13 +110,8 @@ typedef struct {
   uint8_t netmask[ETHERNET_IP_LENGTH];
   uint8_t gateway[ETHERNET_IP_LENGTH];
   uint8_t primary_dns[ETHERNET_IP_LENGTH];
-  #endif
-
-  char mqtt_server[MQTT_SERVER_LENGTH];
-  char mqtt_root_path[MQTT_ROOT_PATH_LENGTH];
-  char mqtt_username[MQTT_USERNAME_LENGTH];
-  char mqtt_password[MQTT_PASSWORD_LENGTH];
   char ntp_server[NTP_SERVER_LENGTH];
+  #endif
 } writable_data_t;
 
 /*!
@@ -138,6 +141,24 @@ enum {
 } state;
 
 typedef enum {
+  INIT_SUPERVISOR,
+  INIT_RTC_LEVEL_TASKS,
+  INIT_SDCARD_LEVEL_TASKS,
+  INIT_CONNECTION_LEVEL_TASKS,
+  INIT_NTP_LEVEL_TASKS,
+  INIT_MQTT_LEVEL_TASKS,
+  END_SUPERVISOR
+} supervisor_state_t;
+
+typedef enum {
+  INIT_ETHERNET,
+  ETHERNET_CONNECT,
+  ETHERNET_OPEN_UDP_SOCKET,
+  END_ETHERNET,
+  WAIT_ETHERNET_STATE
+} ethernet_state_t;
+
+typedef enum {
   INIT_SENSOR,
   PREPARE_SENSOR,
   IS_SENSOR_PREPARED,
@@ -145,28 +166,49 @@ typedef enum {
   IS_SENSOR_GETTED,
   READ_SENSOR,
   END_SENSOR_READING,
-  END_TASK,
   END_SENSOR,
   WAIT_SENSOR_STATE
-} sensor_state_t;
+} sensor_reading_state_t;
 
 typedef enum {
   INIT_TIME,
-  SEND_REQUEST,
-  WAIT_RESPONSE,
-  SET_SYNC_PROVIDER,
-  SET_RTC_TIME,
+  TIME_SEND_ONLINE_REQUEST,
+  TIME_WAIT_ONLINE_RESPONSE,
+  TIME_SET_SYNC_ONLINE_PROVIDER,
+  TIME_SET_RTC_TIME,
+  TIME_SET_SYNC_RTC_PROVIDER,
+  TIME_SET_ALARM,
   END_TIME,
-  WAIT_NTP_STATE
+  WAIT_TIME_STATE
 } time_state_t;
 
 typedef enum {
-  INIT_SD,
-  OPEN_SD,
-  OPEN_FILES,
-  END_SD,
-  WAIT_SD_STATE
-} sd_state_t;
+  INIT_DATA_SAVING,
+  CHEK_OPEN_DATA_SAVING_SERVICE,
+  DATA_SAVING_ON_SDCARD,
+  DATA_SAVING_ONLY_ON_MQTT,
+  DATA_SAVING_LOOP_JSON_TO_MQTT,
+  DATA_SAVING_LOOP_MQTT_TO_SERVICE,
+  WAIT_DATA_SAVING_STATE,
+  END_DATA_SAVING
+} data_saving_state_t;
+
+typedef enum {
+  INIT_SDCARD,
+  OPEN_SDCARD,
+  END_SDCARD,
+  WAIT_SDCARD_STATE
+} sdcard_state_t;
+
+typedef enum {
+  INIT_MQTT,
+  CHECK_MQTT_OPERATION,
+  CONNECT_MQTT,
+  SUBSCRIBE_MQTT,
+  DISCONNECT_MQTT,
+  END_MQTT,
+  WAIT_MQTT_STATE
+} mqtt_state_t;
 
 /**********************************************************************
  * GLOBAL VARIABLE
@@ -237,13 +279,21 @@ volatile uint8_t ready_tasks_count;
 */
 uint32_t awakened_event_occurred_time_ms;
 
+/*!
+  \var rtc_event_occurred_time_ms
+  System time (in millisecond) when rtc interrupt occured.
+*/
+volatile uint32_t rtc_event_occurred_time_ms;
+
 SdFat SD;
 File data_file;
 File ptr_data_file;
 
 #if (MODULE_TYPE == STIMA_MODULE_TYPE_SAMPLE_ETH || MODULE_TYPE == STIMA_MODULE_TYPE_REPORT_ETH)
-uint32_t ethernet_task_attempt_occurred_time_ms;
-EthernetUDP ethernetUdpClient;
+EthernetUDP eth_udp_client;
+EthernetClient eth_tcp_client;
+IPStack ipstack(eth_tcp_client);
+MQTT::Client<IPStack, Countdown, MQTT_ROOT_TOPIC_LENGTH+MQTT_SENSOR_TOPIC_LENGTH, 1> mqtt_client = MQTT::Client<IPStack, Countdown, MQTT_ROOT_TOPIC_LENGTH+MQTT_SENSOR_TOPIC_LENGTH, 1>(ipstack);
 #endif
 
 SensorDriver *sensors[USE_SENSORS_COUNT];
@@ -255,16 +305,16 @@ uint8_t sensors_end_readings_count = 0;
 uint32_t absolute_millis_for_sensors_read_ms;
 
 bool is_first_run;
+bool is_ethernet_connected;
+bool is_ethernet_udp_socket_open;
+bool is_time_set;
+bool is_time_rtc;
+bool is_time_ntp;
+bool is_mqtt_connected;
+bool do_mqtt_disconnect;
+bool do_sensors_reading;
 
-#if (USE_SENSOR_TBS || USE_SENSOR_TBR)
-bool is_sensors_rain_prepared;
-bool is_sensors_rain_setted;
-#endif
-
-#if (USE_SENSOR_STH || USE_SENSOR_ITH || USE_SENSOR_MTH || USE_SENSOR_NTH || USE_SENSOR_XTH)
-bool is_sensors_th_prepared;
-bool is_sensors_th_setted;
-#endif
+char json_sensors_data[USE_SENSORS_COUNT][JSON_BUFFER_LENGTH];
 
 value_t temperature;
 value_t humidity;
@@ -272,15 +322,17 @@ rain_t rain;
 
 uint8_t next_hour_for_sensor_reading;
 uint8_t next_minute_for_sensor_reading;
-uint8_t sensor_reading_day;
-uint8_t sensor_reading_month;
-uint16_t sensor_reading_year;
-uint8_t sensor_reading_hour;
-uint8_t sensor_reading_minute;
 
-sd_state_t sd_state;
+tmElements_t sensor_reading_time;
+tmElements_t ptr_data_file_time;
+
+supervisor_state_t supervisor_state;
+ethernet_state_t ethernet_state;
 time_state_t time_state;
-sensor_state_t sensor_state;
+sensor_reading_state_t sensor_reading_state;
+data_saving_state_t data_saving_state;
+sdcard_state_t sdcard_state;
+mqtt_state_t mqtt_state;
 
 /**********************************************************************
  * FUNCTIONS
@@ -293,6 +345,7 @@ void init_wire(void);
 void init_spi(void);
 void init_rtc(void);
 void init_sensors(void);
+void init_apps(void);
 
 /*! \fn void print_configuration(void)
  *  \brief Print configuration.
@@ -316,11 +369,25 @@ void save_configuration(bool);
 void init_sensors(void);
 
 void setNextTimeForSensorReading(uint8_t *, uint8_t *);
-uint8_t makeRmapSensorString(char [][MQTT_ROOT_PATH_LENGTH + MQTT_SENSOR_PATH_LENGTH], const char *, const char *, const char *);
+
+void mqttRxCallback(MQTT::MessageData &md);
+bool mqttConnect(char *, uint16_t, char *, char *);
+bool mqttPublish(char *, char *);
+uint8_t jsonToMqtt(const char *json, const char *mqtt_sensor, char topic[][MQTT_SENSOR_TOPIC_LENGTH], char message[][MQTT_MESSAGE_LENGTH]);
+void mqttToSd(const char *, const char *, char *);
+void sdToMqtt(const char *, char *, char *);
 
 /**********************************************************************
  * TASKS
  *********************************************************************/
+
+/*! \fn void supervisor_task(void)
+*  \brief Start other tasks.
+*  \return void.
+*/
+void supervisor_task(void);
+
+bool is_event_supervisor;
 
 /*! \fn void sensors_reading_task(void)
  *  \brief Read sensors.
@@ -357,6 +424,7 @@ void rtc_task(void);
 void time_task(void);
 
 bool is_event_time;
+bool is_event_time_executed;
 
 #if (MODULE_TYPE == STIMA_MODULE_TYPE_SAMPLE_ETH || MODULE_TYPE == STIMA_MODULE_TYPE_REPORT_ETH)
 /*! \fn void ethernet_task(void)
@@ -366,15 +434,34 @@ bool is_event_time;
 void ethernet_task(void);
 
 bool is_event_ethernet;
+bool is_event_ethernet_executed;
 #endif
 
-/*! \fn void sd_task(void)
- *  \brief manage sd card and files.
+/*! \fn void data_saving_task(void)
+ *  \brief manage data to send over mqtt and to write in sdcard.
  *  \return void.
  */
-void sd_task(void);
+void data_saving_task(void);
 
-bool is_event_sd;
+bool is_event_data_saving;
+
+/*! \fn void sdcard_task(void)
+ *  \brief manage sdcard.
+ *  \return void.
+ */
+void sdcard_task(void);
+
+bool is_event_sdcard;
+bool is_event_sdcard_executed;
+
+/*! \fn void mqtt_task(void)
+ *  \brief manage mqtt.
+ *  \return void.
+ */
+void mqtt_task(void);
+
+bool is_event_mqtt;
+bool is_event_mqtt_executed;
 
 /**********************************************************************
  * INTERRUPT HANDLER

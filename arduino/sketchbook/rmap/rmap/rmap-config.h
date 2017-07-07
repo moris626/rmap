@@ -43,11 +43,31 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 */
 #define USE_POWER_DOWN                              (false)
 
+#define DEBOUNCING_RTC_TIME_MS                           (500)
+
 /*!
-  \def SDCARD_RETRY_MAX_COUNT
-  Retry count for sd card
+  \def DATA_SAVING_RETRY_COUNT_MAX
+  Retry count for data savings
 */
-#define SDCARD_RETRY_MAX_COUNT                      (5)
+#define DATA_SAVING_RETRY_COUNT_MAX                      (5)
+
+/*!
+  \def DATA_SAVING_RETRY_DELAY_MS
+  Delay for retry in data savings
+*/
+#define DATA_SAVING_RETRY_DELAY_MS                       (100)
+
+/*!
+  \def SDCARD_RETRY_COUNT_MAX
+  Retry count for management sd card
+*/
+#define SDCARD_RETRY_COUNT_MAX                      (5)
+
+/*!
+  \def SDCARD_RETRY_DELAY_MS
+  Delay for retry in sd card management
+*/
+#define SDCARD_RETRY_DELAY_MS                       (100)
 
 /*!
   \def SDCARD_FILES_COUNT
@@ -62,18 +82,39 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #define SDCARD_FILES_NAME_MAX_LENGTH                (20)
 
 /*!
-  \def SDCARD_RETRY_DELAY_MS
-  Delay for retry in sd card management
-*/
-#define SDCARD_RETRY_DELAY_MS                       (3000)
-
-/*!
   \def SDCARD_PTR_DATA_FILE_NAME
   Pointer for sensor data
 */
 #define SDCARD_PTR_DATA_FILE_NAME                   ("ptr_data.txt")
 
+/*!
+  \def MQTT_RETRY_COUNT_MAX
+  Retry count for management mqtt connection
+*/
+#define MQTT_RETRY_COUNT_MAX                        (5)
+
+/*!
+  \def MQTT_RETRY_DELAY_MS
+  Delay for retry in mqtt management
+*/
+#define MQTT_RETRY_DELAY_MS                         (1000)
+
+#define MQTT_CHECK_CONNECTION_DELAY_MS              (5000)
+
 #if (MODULE_TYPE == STIMA_MODULE_TYPE_SAMPLE_ETH || MODULE_TYPE == STIMA_MODULE_TYPE_REPORT_ETH)
+
+/*!
+\def ETHERNET_RETRY_COUNT_MAX
+Retry count for management ethernet
+*/
+#define ETHERNET_RETRY_COUNT_MAX                      (5)
+
+/*!
+\def ETHERNET_RETRY_DELAY_MS
+Delay for retry in ethernet management
+*/
+#define ETHERNET_RETRY_DELAY_MS                       (ETHERNET_ATTEMP_MS)
+
 /*!
   \def W5500_CHIP_SELECT_PIN
   Chip select for Ethernet module W5500
@@ -83,10 +124,10 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #define W5500_RESET_PIN                             (4)
 
 /*!
-  \def NTP_RETRY_MAX_COUNT
+  \def NTP_RETRY_COUNT_MAX
   Retry count for get time from NTP server
 */
-#define NTP_RETRY_MAX_COUNT                         (5)
+#define NTP_RETRY_COUNT_MAX                         (5)
 
 /*!
   \def NTP_RETRY_DELAY_MS
@@ -103,6 +144,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
   Chip select for SD card module
 */
 #define SDCARD_CHIP_SELECT_PIN                      (7)
+
 
 /**********************************************************************
  * CONFIGURATION
@@ -165,16 +207,28 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
  #endif
 
  /*!
+   \def CONFIGURATION_DEFAULT_MQTT_PORT
+   Default mqtt server port.
+ */
+ #define CONFIGURATION_DEFAULT_MQTT_PORT            (MQTT_DEFAULT_PORT)
+
+ /*!
    \def CONFIGURATION_DEFAULT_MQTT_SERVER
    Default mqtt server.
  */
  #define CONFIGURATION_DEFAULT_MQTT_SERVER          (MQTT_DEFAULT_SERVER)
 
  /*!
-   \def CONFIGURATION_DEFAULT_MQTT_ROOT_PATH
-   Default mqtt root path.
+   \def CONFIGURATION_DEFAULT_MQTT_ROOT_TOPIC
+   Default mqtt root topic.
  */
- #define CONFIGURATION_DEFAULT_MQTT_ROOT_PATH       (MQTT_DEFAULT_ROOT_PATH)
+ #define CONFIGURATION_DEFAULT_MQTT_ROOT_TOPIC      (MQTT_DEFAULT_ROOT_TOPIC)
+
+ /*!
+   \def CONFIGURATION_DEFAULT_MQTT_SUBSCRIBE_TOPIC
+   Default mqtt subscribe topic.
+ */
+ #define CONFIGURATION_DEFAULT_MQTT_SUBSCRIBE_TOPIC (MQTT_DEFAULT_SUBSCRIBE_TOPIC)
 
  /*!
    \def CONFIGURATION_DEFAULT_MQTT_USERNAME
