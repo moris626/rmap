@@ -312,18 +312,21 @@ void SensorDriverHyt271::get(int32_t *values, uint8_t length) {
 
 #if (USE_JSON)
 void SensorDriverHyt271::getJson(int32_t *values, uint8_t length, char *json_buffer, size_t json_buffer_length) {
-  StaticJsonBuffer<JSON_BUFFER_LENGTH> buffer;
-  JsonObject &json = buffer.createObject();
-
   SensorDriverHyt271::get(values, length);
 
-  // if (_is_end && !_is_readed && length >= 1)
-    json["B13003"] = values[0];
+  if (_is_end && !_is_readed) {
+    StaticJsonBuffer<JSON_BUFFER_LENGTH> buffer;
+    JsonObject &json = buffer.createObject();
+    // json.set(_driver, _type);
 
-  // if (_is_end && !_is_readed && length >= 2)
-    json["B12101"] = values[1];
+    if (_is_success && length >= 1)
+      json["B13003"] = values[0];
 
-  json.printTo(json_buffer, json_buffer_length);
+    if (_is_success && length >= 2)
+      json["B12101"] = values[1];
+
+    json.printTo(json_buffer, json_buffer_length);
+  }
 }
 #endif
 
@@ -491,15 +494,18 @@ void SensorDriverRain::get(int32_t *values, uint8_t length) {
 
 #if (USE_JSON)
 void SensorDriverRain::getJson(int32_t *values, uint8_t length, char *json_buffer, size_t json_buffer_length) {
-  StaticJsonBuffer<JSON_BUFFER_LENGTH> buffer;
-  JsonObject &json = buffer.createObject();
-
   SensorDriverRain::get(values, length);
 
-  if (_is_end && !_is_readed && length >= 1)
-    json["B13011"] = values[0];
+  if (_is_end && !_is_readed) {
+    StaticJsonBuffer<JSON_BUFFER_LENGTH> buffer;
+    JsonObject &json = buffer.createObject();
+    // json.set(_driver, _type);
 
-  json.printTo(json_buffer, json_buffer_length);
+    if (_is_success && length >= 1)
+      json["B13011"] = values[0];
+
+    json.printTo(json_buffer, json_buffer_length);
+  }
 }
 #endif
 
@@ -618,7 +624,6 @@ void SensorDriverTh::get(int32_t *values, uint8_t length) {
       break;
 
     case SET_TEMPERATURE_ADDRESS:
-      // SERIAL_INFO("aa");
       Wire.beginTransmission(_address);
 
       if (strcmp(_type, SENSOR_TYPE_STH) == 0) {
@@ -649,8 +654,6 @@ void SensorDriverTh::get(int32_t *values, uint8_t length) {
       _start_time_ms = millis();
       _delay_ms = 0;
       _is_end = false;
-
-      // SERIAL_INFO("TA %u ",_is_success);
 
       if (_is_success)
         _get_state = READ_TEMPERATURE;
@@ -684,8 +687,6 @@ void SensorDriverTh::get(int32_t *values, uint8_t length) {
       _start_time_ms = millis();
       _delay_ms = 0;
       _is_end = false;
-
-      // SERIAL_INFO("RT %u ",_is_success);
 
       if (_is_success && length >= 2)
         _get_state = SET_HUMIDITY_ADDRESS;
@@ -726,8 +727,6 @@ void SensorDriverTh::get(int32_t *values, uint8_t length) {
       _delay_ms = 0;
       _is_end = false;
 
-      // SERIAL_INFO("HA %u ",_is_success);
-
       if (_is_success)
         _get_state = READ_HUMIDITY;
       // else _get_state = END;
@@ -760,8 +759,6 @@ void SensorDriverTh::get(int32_t *values, uint8_t length) {
       _delay_ms = 0;
       _is_end = false;
 
-      // SERIAL_INFO("RH %u ",_is_success);
-
       if (_is_success)
         _get_state = END;
       // else _get_state = END;
@@ -778,7 +775,6 @@ void SensorDriverTh::get(int32_t *values, uint8_t length) {
 
       if (length >= 1) {
         values[0] = (uint16_t)(temperature_data[1] << 8) | (temperature_data[0]);
-        // SERIAL_INFO("%s %u ", _type, values[0]);
 
         if (_is_success && values[0] >= SENSOR_DRIVER_TEMPERATURE_MIN && values[0] <= SENSOR_DRIVER_TEMPERATURE_MAX)
           SERIAL_DEBUG("--> temperature: %u\r\n", values[0]);
@@ -801,8 +797,6 @@ void SensorDriverTh::get(int32_t *values, uint8_t length) {
         }
       }
 
-      // SERIAL_INFO("R %u %s\r\n",_is_success, _type);
-
       _start_time_ms = millis();
       _delay_ms = 0;
       _is_end = true;
@@ -813,18 +807,21 @@ void SensorDriverTh::get(int32_t *values, uint8_t length) {
 
 #if (USE_JSON)
 void SensorDriverTh::getJson(int32_t *values, uint8_t length, char *json_buffer, size_t json_buffer_length) {
-  StaticJsonBuffer<JSON_BUFFER_LENGTH> buffer;
-  JsonObject &json = buffer.createObject();
-
   SensorDriverTh::get(values, length);
 
-  if (_is_end && !_is_readed && length >= 1)
-    json["B12101"] = values[0];
+  if (_is_end && !_is_readed) {
+    StaticJsonBuffer<JSON_BUFFER_LENGTH> buffer;
+    JsonObject &json = buffer.createObject();
+    // json.set(_driver, _type);
 
-  if (_is_end && !_is_readed && length >= 2)
-    json["B13003"] = values[1];
+    if (_is_success && length >= 1)
+      json["B12101"] = values[0];
 
-  json.printTo(json_buffer, json_buffer_length);
+    if (_is_success && length >= 2)
+      json["B13003"] = values[1];
+
+    json.printTo(json_buffer, json_buffer_length);
+  }
 }
 #endif
 

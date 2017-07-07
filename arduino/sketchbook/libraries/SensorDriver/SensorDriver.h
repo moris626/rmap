@@ -21,8 +21,8 @@ Released into the GPL licenze.
 #define MAX_DELAY_FOR_READ_MS     (60000)   // this the value for http and report
 
 #if (USE_JSON)
+#include <json_config.h>
 #include <ArduinoJson.h>
-#define JSON_BUFFER_LENGTH        (50)
 #endif
 
 class SensorDriver {
