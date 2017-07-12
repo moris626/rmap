@@ -32,9 +32,6 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include <json_config.h>
 #include <rmap_util.h>
 #include <SdFat.h>
-#include <IPStack.h>
-#include <Countdown.h>
-#include <MQTTClient.h>
 
 #if (MODULE_TYPE == STIMA_MODULE_TYPE_SAMPLE_ETH || MODULE_TYPE == STIMA_MODULE_TYPE_REPORT_ETH)
 #include <ethernet_config.h>
@@ -45,6 +42,10 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 #if (MODULE_TYPE == STIMA_MODULE_TYPE_SAMPLE_GSM || MODULE_TYPE == STIMA_MODULE_TYPE_REPORT_GSM)
 #endif
+
+#include <IPStack.h>
+#include <Countdown.h>
+#include <MQTTClient.h>
 
 /**********************************************************************
  * TYPEDEF
@@ -143,10 +144,8 @@ enum {
 typedef enum {
   INIT_SUPERVISOR,
   INIT_RTC_LEVEL_TASKS,
-  INIT_SDCARD_LEVEL_TASKS,
   INIT_CONNECTION_LEVEL_TASKS,
   INIT_NTP_LEVEL_TASKS,
-  INIT_MQTT_LEVEL_TASKS,
   END_SUPERVISOR
 } supervisor_state_t;
 
@@ -183,22 +182,27 @@ typedef enum {
 } time_state_t;
 
 typedef enum {
-  INIT_DATA_SAVING,
-  CHEK_OPEN_DATA_SAVING_SERVICE,
-  DATA_SAVING_ON_SDCARD,
-  DATA_SAVING_ONLY_ON_MQTT,
-  DATA_SAVING_LOOP_JSON_TO_MQTT,
-  DATA_SAVING_LOOP_MQTT_TO_SERVICE,
-  WAIT_DATA_SAVING_STATE,
-  END_DATA_SAVING
-} data_saving_state_t;
-
-typedef enum {
-  INIT_SDCARD,
-  OPEN_SDCARD,
-  END_SDCARD,
-  WAIT_SDCARD_STATE
-} sdcard_state_t;
+  INIT_DATA_PROCESSING,
+  INIT_SDCARD_SERVICE,
+  OPEN_SDCARD_PTR_DATA_FILES,
+  OPEN_SDCARD_WRITE_DATA_FILE,
+  OPEN_SDCARD_READ_DATA_FILE,
+  READ_PTR_DATA,
+  FIND_PTR_DATA,
+  FOUND_PTR_DATA,
+  END_FIND_PTR,
+  END_SDCARD_SERVICE,
+  INIT_MQTT_SERVICE,
+  SUBSCRIBE_MQTT_SERVICE,
+  END_MQTT_SERVICE,
+  LOOP_JSON_TO_MQTT,
+  LOOP_SD_TO_MQTT,
+  LOOP_MQTT_TO_X,
+  WRITE_DATA_TO_X,
+  WAIT_DATA_PROCESSING_STATE,
+  UPDATE_PTR_DATA,
+  END_DATA_PROCESSING
+} data_processing_state_t;
 
 typedef enum {
   INIT_MQTT,
@@ -288,12 +292,13 @@ volatile uint32_t rtc_event_occurred_time_ms;
 SdFat SD;
 File data_file;
 File ptr_data_file;
+char file_name[SDCARD_FILES_NAME_MAX_LENGTH];
 
 #if (MODULE_TYPE == STIMA_MODULE_TYPE_SAMPLE_ETH || MODULE_TYPE == STIMA_MODULE_TYPE_REPORT_ETH)
 EthernetUDP eth_udp_client;
 EthernetClient eth_tcp_client;
 IPStack ipstack(eth_tcp_client);
-MQTT::Client<IPStack, Countdown, MQTT_ROOT_TOPIC_LENGTH+MQTT_SENSOR_TOPIC_LENGTH, 1> mqtt_client = MQTT::Client<IPStack, Countdown, MQTT_ROOT_TOPIC_LENGTH+MQTT_SENSOR_TOPIC_LENGTH, 1>(ipstack);
+MQTT::Client<IPStack, Countdown, MQTT_ROOT_TOPIC_LENGTH+MQTT_SENSOR_TOPIC_LENGTH+MQTT_MESSAGE_LENGTH, 1> mqtt_client = MQTT::Client<IPStack, Countdown, MQTT_ROOT_TOPIC_LENGTH+MQTT_SENSOR_TOPIC_LENGTH+MQTT_MESSAGE_LENGTH, 1>(ipstack);
 #endif
 
 SensorDriver *sensors[USE_SENSORS_COUNT];
@@ -312,7 +317,6 @@ bool is_time_rtc;
 bool is_time_ntp;
 bool is_mqtt_connected;
 bool do_mqtt_disconnect;
-bool do_sensors_reading;
 
 char json_sensors_data[USE_SENSORS_COUNT][JSON_BUFFER_LENGTH];
 
@@ -324,14 +328,13 @@ uint8_t next_hour_for_sensor_reading;
 uint8_t next_minute_for_sensor_reading;
 
 tmElements_t sensor_reading_time;
-tmElements_t ptr_data_file_time;
+time_t ptr_date_time;
 
 supervisor_state_t supervisor_state;
 ethernet_state_t ethernet_state;
 time_state_t time_state;
 sensor_reading_state_t sensor_reading_state;
-data_saving_state_t data_saving_state;
-sdcard_state_t sdcard_state;
+data_processing_state_t data_processing_state;
 mqtt_state_t mqtt_state;
 
 /**********************************************************************
@@ -372,10 +375,11 @@ void setNextTimeForSensorReading(uint8_t *, uint8_t *);
 
 void mqttRxCallback(MQTT::MessageData &md);
 bool mqttConnect(char *, uint16_t, char *, char *);
-bool mqttPublish(char *, char *);
+bool mqttPublish(const char *, const char *);
 uint8_t jsonToMqtt(const char *json, const char *mqtt_sensor, char topic[][MQTT_SENSOR_TOPIC_LENGTH], char message[][MQTT_MESSAGE_LENGTH]);
 void mqttToSd(const char *, const char *, char *);
 void sdToMqtt(const char *, char *, char *);
+time_t getDateFromMessage(char *);
 
 /**********************************************************************
  * TASKS
@@ -437,31 +441,13 @@ bool is_event_ethernet;
 bool is_event_ethernet_executed;
 #endif
 
-/*! \fn void data_saving_task(void)
+/*! \fn void data_processing_task(void)
  *  \brief manage data to send over mqtt and to write in sdcard.
  *  \return void.
  */
-void data_saving_task(void);
+void data_processing_task(void);
 
 bool is_event_data_saving;
-
-/*! \fn void sdcard_task(void)
- *  \brief manage sdcard.
- *  \return void.
- */
-void sdcard_task(void);
-
-bool is_event_sdcard;
-bool is_event_sdcard_executed;
-
-/*! \fn void mqtt_task(void)
- *  \brief manage mqtt.
- *  \return void.
- */
-void mqtt_task(void);
-
-bool is_event_mqtt;
-bool is_event_mqtt_executed;
 
 /**********************************************************************
  * INTERRUPT HANDLER

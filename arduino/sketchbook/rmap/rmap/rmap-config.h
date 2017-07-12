@@ -46,16 +46,16 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #define DEBOUNCING_RTC_TIME_MS                           (500)
 
 /*!
-  \def DATA_SAVING_RETRY_COUNT_MAX
+  \def DATA_PROCESSING_RETRY_COUNT_MAX
   Retry count for data savings
 */
-#define DATA_SAVING_RETRY_COUNT_MAX                      (5)
+#define DATA_PROCESSING_RETRY_COUNT_MAX                      (2)
 
 /*!
-  \def DATA_SAVING_RETRY_DELAY_MS
+  \def DATA_PROCESSING_RETRY_DELAY_MS
   Delay for retry in data savings
 */
-#define DATA_SAVING_RETRY_DELAY_MS                       (100)
+#define DATA_PROCESSING_RETRY_DELAY_MS                       (500)
 
 /*!
   \def SDCARD_RETRY_COUNT_MAX
