@@ -23,6 +23,8 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #define I2C_WRITE_REGISTER_START_ADDRESS    (0x1F)
 #define I2C_WRITE_REGISTER_END_ADDRESS      (0xFE)
 
+#define CONFIGURATION_EEPROM_ADDRESS        (0x00)
+
 #define I2C_COMMAND_ID                      (0xFF)
 
 #define MISS_INT_VALUE                      (0xFFFF)

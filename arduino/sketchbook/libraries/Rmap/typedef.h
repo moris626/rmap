@@ -6,7 +6,7 @@ typedef struct {
   char type[5];
   uint8_t address;
   uint8_t node;
-  char mqtt_path[MQTT_SENSOR_PATH_LENGTH];
+  char mqtt_topic[MQTT_SENSOR_TOPIC_LENGTH];
 } sensor_t;
 
 /*!

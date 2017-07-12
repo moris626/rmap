@@ -30,5 +30,7 @@ void stringToArray(uint8_t *, char *, const char *, uint8_t);
 
 #define macStringToArray(mac, string)     (stringToArray(mac, string, ":", 16))
 #define ipStringToArray(ip, string)       (stringToArray(ip, string, ".", 10))
+#define dateStringToArray(date, string)   (stringToArray(date, string, "-", 10))
+#define timeStringToArray(time, string)   (stringToArray(time, string, ":", 10))
 
 #endif
