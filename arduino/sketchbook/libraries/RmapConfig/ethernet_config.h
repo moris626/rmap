@@ -10,7 +10,7 @@
 
 #define ETHERNET_DEFAULT_LOCAL_UDP_PORT   (8000)
 
-#define ETHERNET_ATTEMP_MS                (5000)
+#define ETHERNET_ATTEMP_MS                (2000)
 #define ETHERNET_MAC_LENGTH               (6)
 #define ETHERNET_IP_LENGTH                (4)
 
