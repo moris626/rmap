@@ -38,9 +38,9 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include <SPI.h>
 #include <Ethernet2.h>
 #include <ntp.h>
-#endif
 
-#if (MODULE_TYPE == STIMA_MODULE_TYPE_SAMPLE_GSM || MODULE_TYPE == STIMA_MODULE_TYPE_REPORT_GSM)
+#elif (MODULE_TYPE == STIMA_MODULE_TYPE_SAMPLE_GSM || MODULE_TYPE == STIMA_MODULE_TYPE_REPORT_GSM)
+#include <sim800Client.h>
 #endif
 
 #include <IPStack.h>
@@ -166,6 +166,7 @@ typedef enum {
   READ_SENSOR,
   END_SENSOR_READING,
   END_SENSOR,
+  END_SENSOR_TASK,
   WAIT_SENSOR_STATE
 } sensor_reading_state_t;
 
@@ -176,8 +177,8 @@ typedef enum {
   TIME_SET_SYNC_ONLINE_PROVIDER,
   TIME_SET_RTC_TIME,
   TIME_SET_SYNC_RTC_PROVIDER,
-  TIME_SET_ALARM,
   END_TIME,
+  END_TIME_TASK,
   WAIT_TIME_STATE
 } time_state_t;
 
@@ -201,7 +202,8 @@ typedef enum {
   WRITE_DATA_TO_X,
   WAIT_DATA_PROCESSING_STATE,
   UPDATE_PTR_DATA,
-  END_DATA_PROCESSING
+  END_DATA_PROCESSING,
+  END_DATA_PROCESSING_TASK,
 } data_processing_state_t;
 
 typedef enum {
@@ -298,8 +300,12 @@ char file_name[SDCARD_FILES_NAME_MAX_LENGTH];
 EthernetUDP eth_udp_client;
 EthernetClient eth_tcp_client;
 IPStack ipstack(eth_tcp_client);
-MQTT::Client<IPStack, Countdown, MQTT_ROOT_TOPIC_LENGTH+MQTT_SENSOR_TOPIC_LENGTH+MQTT_MESSAGE_LENGTH, 1> mqtt_client = MQTT::Client<IPStack, Countdown, MQTT_ROOT_TOPIC_LENGTH+MQTT_SENSOR_TOPIC_LENGTH+MQTT_MESSAGE_LENGTH, 1>(ipstack);
+#elif (MODULE_TYPE == STIMA_MODULE_TYPE_SAMPLE_GSM || MODULE_TYPE == STIMA_MODULE_TYPE_REPORT_GSM)
+sim800Client sim800;
+IPStack ipstack(sim800);
 #endif
+
+MQTT::Client<IPStack, Countdown, MQTT_ROOT_TOPIC_LENGTH+MQTT_SENSOR_TOPIC_LENGTH+MQTT_MESSAGE_LENGTH, 1> mqtt_client = MQTT::Client<IPStack, Countdown, MQTT_ROOT_TOPIC_LENGTH+MQTT_SENSOR_TOPIC_LENGTH+MQTT_MESSAGE_LENGTH, 1>(ipstack, MQTT_TIMEOUT_MS);
 
 SensorDriver *sensors[USE_SENSORS_COUNT];
 uint8_t sensors_count;
@@ -310,13 +316,12 @@ uint8_t sensors_end_readings_count = 0;
 uint32_t absolute_millis_for_sensors_read_ms;
 
 bool is_first_run;
+bool is_time_set;
+
+#if (MODULE_TYPE == STIMA_MODULE_TYPE_SAMPLE_ETH || MODULE_TYPE == STIMA_MODULE_TYPE_REPORT_ETH)
 bool is_ethernet_connected;
 bool is_ethernet_udp_socket_open;
-bool is_time_set;
-bool is_time_rtc;
-bool is_time_ntp;
-bool is_mqtt_connected;
-bool do_mqtt_disconnect;
+#endif
 
 char json_sensors_data[USE_SENSORS_COUNT][JSON_BUFFER_LENGTH];
 

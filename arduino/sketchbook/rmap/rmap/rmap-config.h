@@ -87,20 +87,6 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 */
 #define SDCARD_PTR_DATA_FILE_NAME                   ("ptr_data.txt")
 
-/*!
-  \def MQTT_RETRY_COUNT_MAX
-  Retry count for management mqtt connection
-*/
-#define MQTT_RETRY_COUNT_MAX                        (5)
-
-/*!
-  \def MQTT_RETRY_DELAY_MS
-  Delay for retry in mqtt management
-*/
-#define MQTT_RETRY_DELAY_MS                         (1000)
-
-#define MQTT_CHECK_CONNECTION_DELAY_MS              (5000)
-
 #if (MODULE_TYPE == STIMA_MODULE_TYPE_SAMPLE_ETH || MODULE_TYPE == STIMA_MODULE_TYPE_REPORT_ETH)
 
 /*!

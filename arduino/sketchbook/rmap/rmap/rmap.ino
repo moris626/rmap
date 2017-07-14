@@ -37,7 +37,13 @@ Debug level for sketch and library.
 
 void setup() {
   wdt_disable();
+  wdt_enable(WDTO_4S);
+  TRACE_BEGIN(230400);
+  init_pins();
+  load_configuration();
+  init_buffers();
   init_wire();
+  init_spi();
   init_rtc();
   init_system();
 }
@@ -45,11 +51,7 @@ void setup() {
 void loop() {
   switch (state) {
     case INIT:
-      init_buffers();
       init_tasks();
-      init_pins();
-      load_configuration();
-      init_spi();
       init_sensors();
       state = TASKS_EXECUTION;
       wdt_timer.interrupt_count = WDT_INTERRUPT_COUNT_DEFAULT;
@@ -151,19 +153,18 @@ void init_tasks() {
   #endif
 
   supervisor_state = INIT_SUPERVISOR;
-  time_state = INIT_TIME;
-  sensor_reading_state = END_SENSOR;
+  time_state = END_TIME_TASK;
+  sensor_reading_state = END_SENSOR_TASK;
   data_processing_state = END_DATA_PROCESSING;
 
   rtc_event_occurred_time_ms = -DEBOUNCING_RTC_TIME_MS;
 
+  #if (MODULE_TYPE == STIMA_MODULE_TYPE_SAMPLE_ETH || MODULE_TYPE == STIMA_MODULE_TYPE_REPORT_ETH)
   is_ethernet_connected = false;
   is_ethernet_udp_socket_open = false;
+  #endif
+
   is_time_set = false;
-  is_time_rtc = true;
-  is_time_ntp = false;
-  is_mqtt_connected = false;
-  do_mqtt_disconnect = false;
 
   interrupts();
 }
@@ -199,7 +200,7 @@ void init_rtc() {
 }
 
 void init_system() {
-  TRACE_BEGIN(230400);
+  wdt_disable();
   wdt_timer.value = 0;
   wdt_timer.interrupt_count = WDT_INTERRUPT_COUNT_DEFAULT;
   set_sleep_mode(SLEEP_MODE_PWR_DOWN);
@@ -249,7 +250,6 @@ void print_configuration() {
 }
 
 void save_configuration(bool is_default) {
-  char temp_string[20];
   if (is_default) {
     SERIAL_INFO("Save default configuration... [ OK ]\r\n");
     configuration.module_type = MODULE_TYPE;
@@ -290,6 +290,7 @@ void save_configuration(bool is_default) {
     // END DEBUG
 
     #if (MODULE_TYPE == STIMA_MODULE_TYPE_SAMPLE_ETH || MODULE_TYPE == STIMA_MODULE_TYPE_REPORT_ETH)
+    char temp_string[20];
     configuration.is_dhcp_enable = CONFIGURATION_DEFAULT_ETHERNET_DHCP_ENABLE;
     strcpy(temp_string, CONFIGURATION_DEFAULT_ETHERNET_MAC);
     macStringToArray(configuration.ethernet_mac, temp_string);
@@ -419,7 +420,10 @@ void supervisor_task() {
   switch (supervisor_state) {
     case INIT_SUPERVISOR:
       is_event_time_executed = false;
+
+      #if (MODULE_TYPE == STIMA_MODULE_TYPE_SAMPLE_ETH || MODULE_TYPE == STIMA_MODULE_TYPE_REPORT_ETH)
       is_event_ethernet_executed = false;
+      #endif
 
       if (is_supervisor_first_run)
         supervisor_state = INIT_RTC_LEVEL_TASKS;
@@ -430,6 +434,7 @@ void supervisor_task() {
       // first time
       noInterrupts();
       if (!is_event_time && !is_event_time_executed && !is_time_set) {
+        time_state = INIT_TIME;
         is_event_time = true;
         ready_tasks_count++;
       }
@@ -478,9 +483,11 @@ void supervisor_task() {
       break;
 
     case INIT_NTP_LEVEL_TASKS:
+      #if (MODULE_TYPE == STIMA_MODULE_TYPE_SAMPLE_ETH || MODULE_TYPE == STIMA_MODULE_TYPE_REPORT_ETH)
       // first time
       noInterrupts();
       if (!is_event_time && !is_event_time_executed && is_time_set && is_ethernet_connected) {
+        time_state = INIT_TIME;
         is_event_time = true;
         ready_tasks_count++;
       }
@@ -496,6 +503,7 @@ void supervisor_task() {
       if (!is_event_time && is_event_time_executed && !is_time_set && is_ethernet_connected) {
         supervisor_state = END_SUPERVISOR;
       }
+      #endif
       break;
 
     case END_SUPERVISOR:
@@ -518,11 +526,11 @@ void rtc_task() {
   if (Pcf8563::isAlarmActive())
     Pcf8563::disableAlarm();
 
-  if (Pcf8563::isTimerActive())
-    Pcf8563::resetTimer();
+  // if (Pcf8563::isTimerActive())
+    // Pcf8563::resetTimer();
 
   if (second() == 0) {
-    Pcf8563::enableTimer();
+    Pcf8563::resetTimer();
 
     noInterrupts();
     if (!is_event_supervisor) {
@@ -542,6 +550,7 @@ void rtc_task() {
 
       noInterrupts();
       if (!is_event_sensors_reading) {
+        sensor_reading_state = INIT_SENSOR;
         is_event_sensors_reading = true;
         ready_tasks_count++;
       }
@@ -549,6 +558,8 @@ void rtc_task() {
     }
 
     setNextTimeForSensorReading(&next_hour_for_sensor_reading, &next_minute_for_sensor_reading);
+    Pcf8563::setAlarm(PCF8563_ALARM_DISABLE, next_minute_for_sensor_reading);
+    Pcf8563::enableAlarm();
 
     noInterrupts();
     is_event_rtc = false;
@@ -572,8 +583,6 @@ void setRtcTimerAndAlarm() {
   SERIAL_INFO("--> observations every %u minutes\r\n", OBSERVATIONS_MINUTES);
   SERIAL_INFO("--> report every %u minutes\r\n", REPORT_MINUTES);
   SERIAL_INFO("--> starting at: %02u:%02u:00\r\n\r\n", next_hour_for_sensor_reading, next_minute_for_sensor_reading);
-  sensor_reading_state = INIT_SENSOR;
-  data_processing_state = INIT_DATA_PROCESSING;
 }
 
 void time_task() {
@@ -587,8 +596,13 @@ void time_task() {
       retry = 0;
       state_after_wait = INIT_TIME;
 
+      #if (MODULE_TYPE == STIMA_MODULE_TYPE_SAMPLE_ETH || MODULE_TYPE == STIMA_MODULE_TYPE_REPORT_ETH)
       if (is_ethernet_connected)
         time_state = TIME_SEND_ONLINE_REQUEST;
+      #elif (MODULE_TYPE == STIMA_MODULE_TYPE_SAMPLE_GSM || MODULE_TYPE == STIMA_MODULE_TYPE_REPORT_GSM)
+      if (true)
+        time_state = TIME_SEND_ONLINE_REQUEST;
+      #endif
       else time_state = TIME_SET_SYNC_RTC_PROVIDER;
       break;
 
@@ -652,17 +666,6 @@ void time_task() {
       time_state = END_TIME;
       break;
 
-    case TIME_SET_ALARM:
-      // next_minute_for_sensor_reading = 255;
-      // setNextTimeForSensorReading(&next_hour_for_sensor_reading, &next_minute_for_sensor_reading);
-      // Pcf8563::disableAlarm();
-      // Pcf8563::disableTimer();
-      // Pcf8563::setAlarm(PCF8563_ALARM_DISABLE, next_minute_for_sensor_reading);
-      // Pcf8563::enableAlarm();
-      // Pcf8563::setTimer(RTC_FREQUENCY, RTC_TIMER);
-      time_state = END_TIME;
-      break;
-
     case END_TIME:
       is_time_set = true;
       is_event_time_executed = true;
@@ -670,7 +673,10 @@ void time_task() {
       is_event_time = false;
       ready_tasks_count--;
       interrupts();
-      time_state = INIT_TIME;
+      time_state = END_TIME_TASK;
+      break;
+
+    case END_TIME_TASK:
       break;
 
     case WAIT_TIME_STATE:
@@ -853,10 +859,8 @@ bool mqttPublish(const char *topic, const char *message) {
   tx_message.payload = (void*)message;
   tx_message.payloadlen = strlen(message) + 1;
 
-  SERIAL_INFO("START\r\n");
   if (mqtt_client.publish(topic, tx_message))
     return false;
-  SERIAL_INFO("END\r\n");
 
   return true;
 }
@@ -947,6 +951,7 @@ void sensors_reading_task () {
       retry = 0;
       state_after_wait = INIT_SENSOR;
       sensor_reading_state = PREPARE_SENSOR;
+      SERIAL_INFO("INIT_SENSOR ---> PREPARE_SENSOR\r\n");
       break;
 
     case PREPARE_SENSOR:
@@ -955,12 +960,14 @@ void sensors_reading_task () {
       start_time_ms = sensors[i]->getStartTime();
       state_after_wait = IS_SENSOR_PREPARED;
       sensor_reading_state = WAIT_SENSOR_STATE;
+      SERIAL_INFO("PREPARE_SENSOR ---> WAIT_SENSOR_STATE\r\n");
       break;
 
     case IS_SENSOR_PREPARED:
       // success
       if (sensors[i]->isPrepared()) {
         sensor_reading_state = GET_SENSOR;
+        SERIAL_INFO("IS_SENSOR_PREPARED ---> GET_SENSOR\r\n");
       }
       // retry
       else if ((++retry) < SENSORS_RETRY_COUNT_MAX) {
@@ -968,9 +975,13 @@ void sensors_reading_task () {
         start_time_ms = millis();
         state_after_wait = PREPARE_SENSOR;
         sensor_reading_state = WAIT_SENSOR_STATE;
+        SERIAL_INFO("IS_SENSOR_PREPARED ---> WAIT_SENSOR_STATE\r\n");
       }
       // fail
-      else sensor_reading_state = END_SENSOR_READING;
+      else {
+        sensor_reading_state = END_SENSOR_READING;
+        SERIAL_INFO("IS_SENSOR_PREPARED ---> END_SENSOR_READING\r\n");
+      }
       break;
 
     case GET_SENSOR:
@@ -980,16 +991,19 @@ void sensors_reading_task () {
       start_time_ms = sensors[i]->getStartTime();
       state_after_wait = IS_SENSOR_GETTED;
       sensor_reading_state = WAIT_SENSOR_STATE;
+      SERIAL_INFO("GET_SENSOR ---> WAIT_SENSOR_STATE\r\n");
       break;
 
     case IS_SENSOR_GETTED:
       // success and end
       if (sensors[i]->isEnd() && !sensors[i]->isReaded() && sensors[i]->isSuccess()) {
         sensor_reading_state = READ_SENSOR;
+        SERIAL_INFO("IS_SENSOR_GETTED ---> READ_SENSOR\r\n");
       }
       // success and not end
       else if (sensors[i]->isSuccess()) {
         sensor_reading_state = GET_SENSOR;
+        SERIAL_INFO("IS_SENSOR_GETTED ---> GET_SENSOR\r\n");
       }
       // retry
       else if ((++retry) < SENSORS_RETRY_COUNT_MAX) {
@@ -997,13 +1011,18 @@ void sensors_reading_task () {
         start_time_ms = millis();
         state_after_wait = GET_SENSOR;
         sensor_reading_state = WAIT_SENSOR_STATE;
+        SERIAL_INFO("IS_SENSOR_GETTED ---> WAIT_SENSOR_STATE\r\n");
       }
       // fail
-      else sensor_reading_state = END_SENSOR_READING;
+      else {
+        sensor_reading_state = END_SENSOR_READING;
+        SERIAL_INFO("IS_SENSOR_GETTED ---> END_SENSOR_READING\r\n");
+      }
       break;
 
     case READ_SENSOR:
       sensor_reading_state = END_SENSOR_READING;
+      SERIAL_INFO("READ_SENSOR ---> END_SENSOR_READING\r\n");
       break;
 
     case END_SENSOR_READING:
@@ -1011,23 +1030,20 @@ void sensors_reading_task () {
       if ((++i) < sensors_count) {
         retry = 0;
         sensor_reading_state = PREPARE_SENSOR;
+        SERIAL_INFO("END_SENSOR_READING ---> PREPARE_SENSOR\r\n");
       }
+      // end
       else {
         noInterrupts();
         if (!is_event_data_saving) {
+          data_processing_state = INIT_DATA_PROCESSING;
           is_event_data_saving = true;
           ready_tasks_count++;
         }
         interrupts();
 
-        #if (SERIAL_TRACE_LEVEL >= SERIAL_TRACE_LEVEL_INFO)
-        delay_ms = 10;
-        start_time_ms = millis();
-        state_after_wait = END_SENSOR;
-        sensor_reading_state = WAIT_SENSOR_STATE;
-        #else
         sensor_reading_state = END_SENSOR;
-        #endif
+        SERIAL_INFO("END_SENSOR_READING ---> END_SENSOR\r\n");
       }
       break;
 
@@ -1036,7 +1052,12 @@ void sensors_reading_task () {
       is_event_sensors_reading = false;
       ready_tasks_count--;
       interrupts();
-      sensor_reading_state = INIT_SENSOR;
+      sensor_reading_state = END_SENSOR_TASK;
+      SERIAL_INFO("END_SENSOR ---> END_SENSOR_TASK\r\n");
+      break;
+
+    case END_SENSOR_TASK:
+      SERIAL_INFO("END_SENSOR_TASK ?!?!?!?!?!?!?!?!?\r\n");
       break;
 
     case WAIT_SENSOR_STATE:
@@ -1096,7 +1117,6 @@ void data_processing_task() {
   static bool is_eof_data_read;
   static tmElements_t datetime;
   static time_t current_ptr_time_data;
-  static time_t old_ptr_time_data;
   static bool is_mqtt_subscribed = false;
   int read_bytes_count;
 
@@ -1200,12 +1220,12 @@ void data_processing_task() {
       break;
 
     case READ_PTR_DATA:
+      ptr_date_time = UINT32_MAX;
       ptr_data_file.seekSet(0);
       read_bytes_count = ptr_data_file.read(&ptr_date_time, sizeof(time_t));
 
-      if (read_bytes_count == sizeof(time_t)) {
+      if (read_bytes_count == sizeof(time_t) && ptr_date_time < now()) {
         is_ptr_found = true;
-        // SERIAL_INFO("Data pointer... [ OK ]\r\n--> %02u/%02u/%04u %02u:%02u:00\r\n\r\n", day(ptr_date_time), month(ptr_date_time), year(ptr_date_time), hour(ptr_date_time), minute(ptr_date_time));
         data_processing_state = FOUND_PTR_DATA;
         SERIAL_INFO("READ_PTR_DATA ---> FOUND_PTR_DATA\r\n");
       }
@@ -1231,8 +1251,9 @@ void data_processing_task() {
 
     case FIND_PTR_DATA:
       // ptr not found. find it by searching in file name. if there isn't file, ptr_date_time is set to current date at 00:00:00 time.
-      if (!is_ptr_found && (year(ptr_date_time) != year() || month(ptr_date_time) != month() || day(ptr_date_time) != day())) {
+      if (!is_ptr_found && (year(ptr_date_time) != year() || month(ptr_date_time) != month() || day(ptr_date_time) != day()) && ptr_date_time < now()) {
         sdcard_make_filename(ptr_date_time, file_name);
+        SERIAL_INFO("%s\r\n", file_name);
 
         if (SD.exists(file_name))
           is_ptr_found = true;
@@ -1511,7 +1532,7 @@ void data_processing_task() {
       break;
 
     case UPDATE_PTR_DATA:
-      if (is_ptr_updated) {
+      if (is_ptr_updated && ptr_date_time < now()) {
         if (ptr_data_file.seekSet(0) && ptr_data_file.write(&ptr_date_time, sizeof(time_t)) == sizeof(time_t)) {
           ptr_data_file.flush();
           ptr_data_file.close();
@@ -1553,8 +1574,12 @@ void data_processing_task() {
       is_event_data_saving = false;
       ready_tasks_count--;
       interrupts();
-      data_processing_state = INIT_DATA_PROCESSING;
-      SERIAL_INFO("END_DATA_PROCESSING ---> INIT_DATA_PROCESSING\r\n");
+      data_processing_state = END_DATA_PROCESSING_TASK;
+      SERIAL_INFO("END_DATA_PROCESSING ---> END_DATA_PROCESSING_TASK\r\n");
+      break;
+
+    case END_DATA_PROCESSING_TASK:
+      SERIAL_INFO("END_DATA_PROCESSING ?!?!?!?!?!?!?!?!?\r\n");
       break;
 
     case WAIT_DATA_PROCESSING_STATE:
