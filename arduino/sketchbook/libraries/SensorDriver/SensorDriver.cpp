@@ -25,17 +25,11 @@ namespace _SensorDriver {
 // SensorDriver
 //------------------------------------------------------------------------------
 
-// SensorDriver::SensorDriver(const char* driver, const char* type, bool *is_setted, bool *is_prepared) {
 SensorDriver::SensorDriver(const char* driver, const char* type) {
   _driver = driver;
   _type = type;
-  // _is_setted = is_setted;
-  // *is_setted = false;
-  // _is_prepared = is_prepared;
-  // *is_prepared = false;
 }
 
-// SensorDriver *SensorDriver::create(const char* driver, const char* type, bool *is_setted, bool *is_prepared) {
 SensorDriver *SensorDriver::create(const char* driver, const char* type) {
   if (strlen(driver) == 0 || strlen(type) == 0) {
     SERIAL_ERROR("SensorDriver %s-%s create... [ FAIL ]\r\n--> driver or type is null.\r\n", driver, type);
@@ -44,7 +38,6 @@ SensorDriver *SensorDriver::create(const char* driver, const char* type) {
 
   #if (USE_SENSOR_ADT)
   else if (strcmp(type, SENSOR_TYPE_ADT) == 0)
-    // return new SensorDriverHyt271(driver, type, is_setted, is_prepared);
     return new SensorDriverHyt271(driver, type, &_SensorDriver::_is_hyt_setted, &_SensorDriver::_is_hyt_prepared);
   #endif
 
@@ -75,13 +68,11 @@ SensorDriver *SensorDriver::create(const char* driver, const char* type) {
 
   #if (USE_SENSOR_TBS || USE_SENSOR_TBR)
   else if (strcmp(type, SENSOR_TYPE_TBS) == 0 || strcmp(type, SENSOR_TYPE_TBR) == 0)
-    // return new SensorDriverRain(driver, type, is_setted, is_prepared);
     return new SensorDriverRain(driver, type, &_SensorDriver::_is_tb_setted, &_SensorDriver::_is_tb_prepared);
   #endif
 
   #if (USE_SENSOR_STH || USE_SENSOR_ITH || USE_SENSOR_MTH || USE_SENSOR_NTH || USE_SENSOR_XTH)
   else if (strcmp(type, SENSOR_TYPE_STH) == 0 || strcmp(type, SENSOR_TYPE_ITH) == 0 || strcmp(type, SENSOR_TYPE_MTH) == 0 || strcmp(type, SENSOR_TYPE_NTH) == 0 || strcmp(type, SENSOR_TYPE_XTH) == 0)
-    // return new SensorDriverTh(driver, type, is_setted, is_prepared);
     return new SensorDriverTh(driver, type, &_SensorDriver::_is_th_setted, &_SensorDriver::_is_th_prepared);
   #endif
 
@@ -158,15 +149,6 @@ bool SensorDriver::isReaded() {
   return _is_readed;
 }
 
-// void SensorDriver::resetPrepared() {
-//   *_is_prepared = false;
-// }
-//
-// bool SensorDriver::isPrepared() {
-//   return *_is_prepared;
-// }
-
-// void SensorDriver::createAndSetup(const char* driver, const char* type, bool *is_setted, bool *is_prepared, uint8_t address, SensorDriver *sensors[], uint8_t *sensors_count) {
 void SensorDriver::createAndSetup(const char* driver, const char* type, uint8_t address, SensorDriver *sensors[], uint8_t *sensors_count) {
   sensors[*sensors_count] = SensorDriver::create(driver, type);
   if (sensors[*sensors_count]) {
@@ -317,13 +299,14 @@ void SensorDriverHyt271::getJson(int32_t *values, uint8_t length, char *json_buf
   if (_is_end && !_is_readed) {
     StaticJsonBuffer<JSON_BUFFER_LENGTH> buffer;
     JsonObject &json = buffer.createObject();
-    // json.set(_driver, _type);
 
     if (_is_success && length >= 1)
       json["B13003"] = values[0];
+    else json["B13003"] = RawJson("null");
 
     if (_is_success && length >= 2)
       json["B12101"] = values[1];
+    else json["B12101"] = RawJson("null");
 
     json.printTo(json_buffer, json_buffer_length);
   }
@@ -499,10 +482,10 @@ void SensorDriverRain::getJson(int32_t *values, uint8_t length, char *json_buffe
   if (_is_end && !_is_readed) {
     StaticJsonBuffer<JSON_BUFFER_LENGTH> buffer;
     JsonObject &json = buffer.createObject();
-    // json.set(_driver, _type);
 
     if (_is_success && length >= 1)
       json["B13011"] = values[0];
+    else json["B13011"] = RawJson("null");
 
     json.printTo(json_buffer, json_buffer_length);
   }
@@ -812,13 +795,14 @@ void SensorDriverTh::getJson(int32_t *values, uint8_t length, char *json_buffer,
   if (_is_end && !_is_readed) {
     StaticJsonBuffer<JSON_BUFFER_LENGTH> buffer;
     JsonObject &json = buffer.createObject();
-    // json.set(_driver, _type);
 
     if (_is_success && length >= 1)
       json["B12101"] = values[0];
+    else json["B12101"] = RawJson("null");
 
     if (_is_success && length >= 2)
       json["B13003"] = values[1];
+    else json["B13003"] = RawJson("null");
 
     json.printTo(json_buffer, json_buffer_length);
   }

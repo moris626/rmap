@@ -18,8 +18,6 @@ Released into the GPL licenze.
 
 #define SENSOR_DRIVER_C_TO_K      (27315l)
 
-#define MAX_DELAY_FOR_READ_MS     (60000)   // this the value for http and report
-
 #if (USE_JSON)
 #include <json_config.h>
 #include <ArduinoJson.h>
@@ -27,9 +25,6 @@ Released into the GPL licenze.
 
 class SensorDriver {
 public:
-  // static SensorDriver *create(const char* driver, const char* type, bool *is_setted, bool *is_prepared);
-  // static void createAndSetup(const char* driver, const char* type, bool *is_setted, bool *is_prepared, uint8_t address, SensorDriver *sensors[], uint8_t *sensors_count);
-  // SensorDriver(const char* driver, const char* type, bool *is_setted, bool *is_prepared);
   SensorDriver(const char* driver, const char* type);
 
   static SensorDriver *create(const char* driver, const char* type);
@@ -69,8 +64,6 @@ protected:
   bool _is_end;
   bool _is_success;
   bool _is_readed;
-  // bool *_is_setted;
-  // bool *_is_prepared;
 
   #if (SERIAL_TRACE_LEVEL == SERIAL_TRACE_LEVEL_DEBUG)
   static void printInfo(const char* driver, const char* type, const uint8_t address = 0, const uint8_t node = 0);
@@ -85,7 +78,6 @@ protected:
 #define SENSOR_DRIVER_HYT271_TEMPERATURE_MAX    (SENSOR_DRIVER_C_TO_K + (HYT271_TEMPERATURE_MAX * 100))
 class SensorDriverHyt271 : public SensorDriver {
 public:
-  // SensorDriverHyt271(const char* driver, const char* type, bool *is_setted, bool *is_prepared) : SensorDriver(driver, type, is_setted, is_prepared) {
   SensorDriverHyt271(const char* driver, const char* type, bool *is_setted, bool *is_prepared) : SensorDriver(driver, type) {
     _is_setted = is_setted;
     _is_prepared = is_prepared;
@@ -128,7 +120,6 @@ protected:
 #define SENSOR_DRIVER_RAIN_MAX      (300)
 class SensorDriverRain : public SensorDriver {
 public:
-  // SensorDriverRain(const char* driver, const char* type, bool *is_setted, bool *is_prepared) : SensorDriver(driver, type, is_setted, is_prepared) {
   SensorDriverRain(const char* driver, const char* type, bool *is_setted, bool *is_prepared) : SensorDriver(driver, type) {
     _is_setted = is_setted;
     _is_prepared = is_prepared;
@@ -174,7 +165,6 @@ protected:
 #define SENSOR_DRIVER_HUMIDITY_MAX          (100)
 class SensorDriverTh : public SensorDriver {
 public:
-  // SensorDriverTh(const char* driver, const char* type, bool *is_setted, bool *is_prepared) : SensorDriver(driver, type, is_setted, is_prepared) {
   SensorDriverTh(const char* driver, const char* type, bool *is_setted, bool *is_prepared) : SensorDriver(driver, type) {
     _is_setted = is_setted;
     _is_prepared = is_prepared;
