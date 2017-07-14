@@ -168,12 +168,6 @@ volatile uint8_t readable_data_length;
 volatile uint8_t i2c_rx_data[I2C_MAX_DATA_LENGTH];
 
 /*!
-  \var i2c_rx_data_length
-  Length of i2c received data.
-*/
-volatile uint8_t i2c_rx_data_length;
-
-/*!
   \var ready_tasks_count
   Number of tasks ready to execute.
 */

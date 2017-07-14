@@ -36,18 +36,22 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "i2c-th.h"
 
 void setup() {
+  wdt_disable();
+  wdt_enable(WDTO_4S);
+  TRACE_BEGIN(230400);
+  init_pins();
+  load_configuration();
+  init_buffers();
+  init_wire();
+  init_spi();
+  init_rtc();
   init_system();
 }
 
 void loop() {
   switch (state) {
     case INIT:
-      init_buffers();
       init_tasks();
-      init_pins();
-      load_configuration();
-      init_wire();
-      init_spi();
       init_sensors();
       state = TASKS_EXECUTION;
       wdt_timer.interrupt_count = WDT_INTERRUPT_COUNT_DEFAULT;
@@ -117,6 +121,8 @@ void init_tasks() {
   is_event_command_task = false;
   is_event_sensors_reading = false;
 
+  sensor_reading_state = END_SENSOR_TASK;
+
   #if (USE_WDT_TASK)
   is_event_wdt = false;
   #endif
@@ -133,8 +139,8 @@ void init_wire() {
   Wire.setClock(I2C_BUS_CLOCK);
   Wire.onRequest(i2c_request_interrupt_handler);
   Wire.onReceive(i2c_receive_interrupt_handler);
-  digitalWrite(SDA, LOW);
-  digitalWrite(SCL, LOW);
+  // digitalWrite(SDA, LOW);
+  // digitalWrite(SCL, LOW);
 }
 
 void init_spi() {
@@ -145,7 +151,6 @@ void init_rtc() {
 
 void init_system() {
   wdt_disable();
-  TRACE_BEGIN(230400);
   wdt_timer.value = 0;
   wdt_timer.interrupt_count = WDT_INTERRUPT_COUNT_DEFAULT;
   set_sleep_mode(SLEEP_MODE_PWR_DOWN);
@@ -226,17 +231,17 @@ void init_sensors () {
   SERIAL_INFO("Sensors...\r\n");
 
   #if (USE_SENSOR_ADT)
-  SensorDriver::createAndSetup(SENSOR_DRIVER_I2C, SENSOR_TYPE_ADT, &is_sensor_adt_setted, &is_sensor_adt_prepared, configuration.i2c_temperature_address, sensors, &sensors_count);
+  SensorDriver::createAndSetup(SENSOR_DRIVER_I2C, SENSOR_TYPE_ADT, configuration.i2c_temperature_address, sensors, &sensors_count);
   SERIAL_INFO("--> %u: %s-%s\r\n", sensors_count, SENSOR_DRIVER_I2C, SENSOR_TYPE_ADT);
   #endif
 
   #if (USE_SENSOR_HIH)
-  SensorDriver::createAndSetup(SENSOR_DRIVER_I2C, SENSOR_TYPE_HIH, &is_sensor_hih_setted, &is_sensor_hih_prepared, configuration.i2c_humidity_address, sensors, &sensors_count);
+  SensorDriver::createAndSetup(SENSOR_DRIVER_I2C, SENSOR_TYPE_HIH, configuration.i2c_humidity_address, sensors, &sensors_count);
   SERIAL_INFO("--> %u: %s-%s\r\n", sensors_count, SENSOR_DRIVER_I2C, SENSOR_TYPE_HIH);
   #endif
 
   #if (USE_SENSOR_HYT)
-  SensorDriver::createAndSetup(SENSOR_DRIVER_I2C, SENSOR_TYPE_HYT, &is_sensor_hyt_setted, &is_sensor_hyt_prepared, configuration.i2c_temperature_address, sensors, &sensors_count);
+  SensorDriver::createAndSetup(SENSOR_DRIVER_I2C, SENSOR_TYPE_HYT, configuration.i2c_temperature_address, sensors, &sensors_count);
   SERIAL_INFO("--> %u: %s-%s\r\n", sensors_count, SENSOR_DRIVER_I2C, SENSOR_TYPE_HYT);
   #endif
 
@@ -280,9 +285,6 @@ ISR(WDT_vect) {
 }
 
 void i2c_request_interrupt_handler() {
-  // for (uint8_t i=0; i<readable_data_length; i++)
-    // Wire.write(((uint8_t *)readable_data_read_ptr+readable_data_address)[i]);
-
   Wire.write((uint8_t *)readable_data_read_ptr+readable_data_address, readable_data_length);
 }
 
@@ -312,13 +314,13 @@ void i2c_receive_interrupt_handler(int rx_data_length) {
 void wdt_task() {
 
   if (executeWdtTaskEach(SAMPLE_SECONDS) && configuration.is_continuous && is_continuous && is_start) {
-    sensor_state = INIT_SENSOR;
-    noInterrupts();
     if (!is_event_sensors_reading) {
+      noInterrupts();
+      sensor_reading_state = INIT_SENSOR;
       is_event_sensors_reading = true;
       ready_tasks_count++;
+      interrupts();
     }
-    interrupts();
   }
 
   noInterrupts();
@@ -526,17 +528,20 @@ void observations_processing_debug() {
 void sensors_reading_task () {
   static uint8_t i;
   static uint8_t retry;
-  static sensor_state_t state_after_wait;
+  static sensor_reading_state_t state_after_wait;
   static uint32_t delay_ms;
   static uint32_t start_time_ms;
   static int32_t values_readed_from_sensor[2];
 
-  switch (sensor_state) {
+  switch (sensor_reading_state) {
     case INIT_SENSOR:
+      for (i=0; i<sensors_count; i++)
+        sensors[i]->resetPrepared();
+
       i = 0;
       retry = 0;
       state_after_wait = INIT_SENSOR;
-      sensor_state = PREPARE_SENSOR;
+      sensor_reading_state = PREPARE_SENSOR;
       break;
 
     case PREPARE_SENSOR:
@@ -544,23 +549,23 @@ void sensors_reading_task () {
       delay_ms = sensors[i]->getDelay();
       start_time_ms = sensors[i]->getStartTime();
       state_after_wait = IS_SENSOR_PREPARED;
-      sensor_state = WAIT_STATE;
+      sensor_reading_state = WAIT_SENSOR_STATE;
       break;
 
     case IS_SENSOR_PREPARED:
       // success
       if (sensors[i]->isPrepared()) {
-        sensor_state = GET_SENSOR;
+        sensor_reading_state = GET_SENSOR;
       }
       // retry
-      else if (++retry < SENSORS_RETRY_COUNT_MAX) {
+      else if ((++retry) < SENSORS_RETRY_COUNT_MAX) {
         delay_ms = SENSORS_RETRY_DELAY_MS;
         start_time_ms = millis();
         state_after_wait = PREPARE_SENSOR;
-        sensor_state = WAIT_STATE;
+        sensor_reading_state = WAIT_SENSOR_STATE;
       }
       // fail
-      else sensor_state = END_SENSOR_READING;
+      else sensor_reading_state = END_SENSOR_READING;
       break;
 
     case GET_SENSOR:
@@ -568,24 +573,24 @@ void sensors_reading_task () {
       delay_ms = sensors[i]->getDelay();
       start_time_ms = sensors[i]->getStartTime();
       state_after_wait = IS_SENSOR_GETTED;
-      sensor_state = WAIT_STATE;
+      sensor_reading_state = WAIT_SENSOR_STATE;
       break;
 
     case IS_SENSOR_GETTED:
       // success and end
       if (sensors[i]->isEnd() && !sensors[i]->isReaded() && sensors[i]->isSuccess()) {
-        sensor_state = READ_SENSOR;
+        sensor_reading_state = READ_SENSOR;
       }
       // success and not end
       else if (sensors[i]->isSuccess()) {
-        sensor_state = GET_SENSOR;
+        sensor_reading_state = GET_SENSOR;
       }
       // retry
-      else if (++retry < SENSORS_RETRY_COUNT_MAX) {
+      else if ((++retry) < SENSORS_RETRY_COUNT_MAX) {
         delay_ms = SENSORS_RETRY_DELAY_MS;
         start_time_ms = millis();
-        state_after_wait = PREPARE_SENSOR;
-        sensor_state = WAIT_STATE;
+        state_after_wait = GET_SENSOR;
+        sensor_reading_state = WAIT_SENSOR_STATE;
       }
       // fail
       else {
@@ -597,7 +602,7 @@ void sensors_reading_task () {
         humidity_samples.error_count++;
         #endif
 
-        sensor_state = END_SENSOR_READING;
+        sensor_reading_state = END_SENSOR_READING;
       }
       break;
 
@@ -608,14 +613,14 @@ void sensors_reading_task () {
         temperature_samples.values[temperature_samples.count++] = values_readed_from_sensor[1];
       }
       #endif
-      sensor_state = END_SENSOR_READING;
+      sensor_reading_state = END_SENSOR_READING;
       break;
 
     case END_SENSOR_READING:
       // next sensor
-      if (++i < sensors_count) {
+      if ((++i) < sensors_count) {
         retry = 0;
-        sensor_state = PREPARE_SENSOR;
+        sensor_reading_state = PREPARE_SENSOR;
       }
       // end
       else {
@@ -628,34 +633,31 @@ void sensors_reading_task () {
           else is_first_run = false;
         }
 
-        for (i=0; i<sensors_count; i++)
-          sensors[i]->resetPrepared();
-
         #if (SERIAL_TRACE_LEVEL >= SERIAL_TRACE_LEVEL_INFO)
-        delay_ms = 5;
+        delay_ms = 10;
         start_time_ms = millis();
-        state_after_wait = END_TASK;
-        sensor_state = WAIT_STATE;
+        state_after_wait = END_SENSOR;
+        sensor_reading_state = WAIT_SENSOR_STATE;
         #else
-        sensor_state = END_TASK;
+        sensor_reading_state = END_SENSOR;
         #endif
       }
       break;
 
-    case END_TASK:
+    case END_SENSOR:
       noInterrupts();
       is_event_sensors_reading = false;
       ready_tasks_count--;
       interrupts();
-      sensor_state = END_SENSOR;
+      sensor_reading_state = END_SENSOR_TASK;
       break;
 
-    case END_SENSOR:
+    case END_SENSOR_TASK:
       break;
 
-    case WAIT_STATE:
+    case WAIT_SENSOR_STATE:
       if (millis() - start_time_ms > delay_ms) {
-        sensor_state = state_after_wait;
+        sensor_reading_state = state_after_wait;
       }
       break;
   }
@@ -691,81 +693,79 @@ void command_task() {
 
   switch(i2c_rx_data[1]) {
     case I2C_TH_COMMAND_ONESHOT_START:
-    #if (SERIAL_TRACE_LEVEL > SERIAL_TRACE_LEVEL_OFF)
-    strcpy(buffer, "ONESHOT START");
-    #endif
-    is_oneshot = true;
-    is_continuous = false;
-    is_start = true;
-    is_stop = false;
-    commands();
-    break;
+      #if (SERIAL_TRACE_LEVEL > SERIAL_TRACE_LEVEL_OFF)
+      strcpy(buffer, "ONESHOT START");
+      #endif
+      is_oneshot = true;
+      is_continuous = false;
+      is_start = true;
+      is_stop = false;
+      commands();
+      break;
 
     case I2C_TH_COMMAND_ONESHOT_STOP:
-    #if (SERIAL_TRACE_LEVEL > SERIAL_TRACE_LEVEL_OFF)
-    strcpy(buffer, "ONESHOT STOP");
-    #endif
-    is_oneshot = true;
-    is_continuous = false;
-    is_start = false;
-    is_stop = true;
-    commands();
-    break;
+      #if (SERIAL_TRACE_LEVEL > SERIAL_TRACE_LEVEL_OFF)
+      strcpy(buffer, "ONESHOT STOP");
+      #endif
+      is_oneshot = true;
+      is_continuous = false;
+      is_start = false;
+      is_stop = true;
+      commands();
+      break;
 
     case I2C_TH_COMMAND_ONESHOT_START_STOP:
-    #if (SERIAL_TRACE_LEVEL > SERIAL_TRACE_LEVEL_OFF)
-    strcpy(buffer, "ONESHOT START-STOP");
-    #endif
-    is_oneshot = true;
-    is_continuous = false;
-    is_start = true;
-    is_stop = true;
-    commands();
-    break;
+      #if (SERIAL_TRACE_LEVEL > SERIAL_TRACE_LEVEL_OFF)
+      strcpy(buffer, "ONESHOT START-STOP");
+      #endif
+      is_oneshot = true;
+      is_continuous = false;
+      is_start = true;
+      is_stop = true;
+      commands();
+      break;
 
     case I2C_TH_COMMAND_CONTINUOUS_START:
-    #if (SERIAL_TRACE_LEVEL > SERIAL_TRACE_LEVEL_OFF)
-    strcpy(buffer, "CONTINUOUS START");
-    #endif
-    is_oneshot = false;
-    is_continuous = true;
-    is_start = true;
-    is_stop = false;
-    commands();
-    // starttime = millis();
-    break;
+      #if (SERIAL_TRACE_LEVEL > SERIAL_TRACE_LEVEL_OFF)
+      strcpy(buffer, "CONTINUOUS START");
+      #endif
+      is_oneshot = false;
+      is_continuous = true;
+      is_start = true;
+      is_stop = false;
+      commands();
+      break;
 
     case I2C_TH_COMMAND_CONTINUOUS_STOP:
-    #if (SERIAL_TRACE_LEVEL > SERIAL_TRACE_LEVEL_OFF)
-    strcpy(buffer, "CONTINUOUS STOP");
-    #endif
-    is_oneshot = false;
-    is_continuous = true;
-    is_start = false;
-    is_stop = true;
-    commands();
-    break;
+      #if (SERIAL_TRACE_LEVEL > SERIAL_TRACE_LEVEL_OFF)
+      strcpy(buffer, "CONTINUOUS STOP");
+      #endif
+      is_oneshot = false;
+      is_continuous = true;
+      is_start = false;
+      is_stop = true;
+      commands();
+      break;
 
     case I2C_TH_COMMAND_CONTINUOUS_START_STOP:
-    #if (SERIAL_TRACE_LEVEL > SERIAL_TRACE_LEVEL_OFF)
-    strcpy(buffer, "CONTINUOUS START-STOP");
-    #endif
-    is_oneshot = false;
-    is_continuous = true;
-    is_start = true;
-    is_stop = true;
-    commands();
-    // starttime = millis();
-    break;
+      #if (SERIAL_TRACE_LEVEL > SERIAL_TRACE_LEVEL_OFF)
+      strcpy(buffer, "CONTINUOUS START-STOP");
+      #endif
+      is_oneshot = false;
+      is_continuous = true;
+      is_start = true;
+      is_stop = true;
+      commands();
+      break;
 
     case I2C_TH_COMMAND_SAVE:
-    is_oneshot = false;
-    is_continuous = false;
-    is_start = false;
-    is_stop = false;
-    SERIAL_TRACE("Execute command [ SAVE ]\r\n");
-    save_configuration(CONFIGURATION_CURRENT);
-    break;
+      is_oneshot = false;
+      is_continuous = false;
+      is_start = false;
+      is_stop = false;
+      SERIAL_TRACE("Execute command [ SAVE ]\r\n");
+      save_configuration(CONFIGURATION_CURRENT);
+      break;
   }
 
   #if (SERIAL_TRACE_LEVEL > SERIAL_TRACE_LEVEL_OFF)
@@ -807,16 +807,15 @@ void commands() {
 
   if (configuration.is_oneshot && is_oneshot && is_start) {
     reset_buffers();
-    sensor_state = INIT_SENSOR;
-    if(!is_event_sensors_reading) {
+
+    if (!is_event_sensors_reading) {
+      sensor_reading_state = INIT_SENSOR;
       is_event_sensors_reading = true;
       ready_tasks_count++;
     }
   }
   else if (configuration.is_continuous && is_continuous && is_start) {
     #if (USE_WDT_TASK)
-    // wdt_disable();
-    // wdt_init(WDT_TIMER);
     wdt_reset();
     #endif
     reset_buffers();

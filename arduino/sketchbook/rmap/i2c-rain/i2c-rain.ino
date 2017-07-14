@@ -36,18 +36,22 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "i2c-rain.h"
 
 void setup() {
+  wdt_disable();
+  wdt_enable(WDTO_4S);
+  TRACE_BEGIN(230400);
+  init_pins();
+  load_configuration();
+  init_buffers();
+  init_wire();
+  init_spi();
+  init_rtc();
   init_system();
 }
 
 void loop() {
   switch (state) {
     case INIT:
-      init_buffers();
       init_tasks();
-      init_pins();
-      load_configuration();
-      init_wire();
-      init_spi();
       state = TASKS_EXECUTION;
       wdt_timer.interrupt_count = WDT_INTERRUPT_COUNT_DEFAULT;
       break;
@@ -111,7 +115,6 @@ void init_buffers() {
 
 void init_tasks() {
   noInterrupts();
-  i2c_rx_data_length = 0;
   ready_tasks_count = 0;
 
   is_event_command_task = false;
@@ -148,7 +151,6 @@ void init_rtc() {
 
 void init_system() {
   wdt_disable();
-  TRACE_BEGIN(230400);
   wdt_timer.value = 0;
   wdt_timer.interrupt_count = WDT_INTERRUPT_COUNT_DEFAULT;
   set_sleep_mode(SLEEP_MODE_PWR_DOWN);
@@ -244,19 +246,15 @@ void i2c_request_interrupt_handler() {
   Wire.write((uint8_t *)readable_data_read_ptr+readable_data_address, readable_data_length);
 }
 
-void i2c_receive_interrupt_handler(int receive_bytes_count) {
-  for (uint8_t i=0; i<receive_bytes_count; i++)
+void i2c_receive_interrupt_handler(int rx_data_length) {
+  for (uint8_t i=0; i<rx_data_length; i++)
     i2c_rx_data[i] = Wire.read();
 
-  i2c_rx_data_length = receive_bytes_count;
-
-  uint8_t i;
-
-  if (i2c_rx_data_length == 2 && is_readable_register(i2c_rx_data[0])) {
+  if (rx_data_length == 2 && is_readable_register(i2c_rx_data[0])) {
     readable_data_address = i2c_rx_data[0];
     readable_data_length = i2c_rx_data[1];
   }
-  else if (i2c_rx_data_length == 2 && is_command(i2c_rx_data[0])) {
+  else if (rx_data_length == 2 && is_command(i2c_rx_data[0])) {
     noInterrupts();
     if (!is_event_command_task) {
       is_event_command_task = true;
@@ -265,7 +263,7 @@ void i2c_receive_interrupt_handler(int receive_bytes_count) {
     interrupts();
   }
   else if (is_writable_register(i2c_rx_data[0])) {
-    for (i=1; i<i2c_rx_data_length; i++)
+    for (uint8_t i=1; i<rx_data_length; i++)
       ((uint8_t *)writable_data_ptr)[i2c_rx_data[0] - I2C_WRITE_REGISTER_START_ADDRESS] = i2c_rx_data[i];
   }
 }
@@ -291,31 +289,6 @@ void wdt_task() {
 }
 #endif
 
-void i2c_receive_task() {
-  uint8_t i;
-
-  SERIAL_TRACE("I2C received %d  bytes: ", i2c_rx_data_length);
-  SERIAL_TRACE_ARRAY((void*)i2c_rx_data, i2c_rx_data_length, UINT8, "%x ");
-  SERIAL_TRACE("\r\n");
-
-  if (i2c_rx_data_length == 2 && is_readable_register(i2c_rx_data[0])) {
-    readable_data_address = i2c_rx_data[0];
-    readable_data_length = i2c_rx_data[1];
-  }
-  else if (i2c_rx_data_length == 2 && is_command(i2c_rx_data[0])) {
-    command_task();
-  }
-  else if (is_writable_register(i2c_rx_data[0])) {
-    for (i=1; i<i2c_rx_data_length; i++)
-      ((uint8_t *)writable_data_ptr)[i2c_rx_data[0] - I2C_WRITE_REGISTER_START_ADDRESS] = i2c_rx_data[i];
-  }
-
-  noInterrupts();
-  is_event_command_task = false;
-  ready_tasks_count--;
-  interrupts();
-}
-
 void exchange_buffers() {
   readable_data_temp_ptr = readable_data_write_ptr;
   readable_data_write_ptr = readable_data_read_ptr;
@@ -325,10 +298,6 @@ void exchange_buffers() {
 void reset_buffers() {
   memset((void *) &readable_data_write_ptr->rain, UINT16_MAX, sizeof(rain_t));
   rain.tips_count = 0;
-
-  #if (USE_WDT_TASK)
-  wdt_init(WDT_TIMER);
-  #endif
 }
 
 void command_task() {
@@ -338,45 +307,45 @@ void command_task() {
 
   switch(i2c_rx_data[1]) {
     case I2C_RAIN_COMMAND_ONESHOT_START:
-    #if (SERIAL_TRACE_LEVEL > SERIAL_TRACE_LEVEL_OFF)
-    strcpy(buffer, "ONESHOT START");
-    #endif
-    is_oneshot = true;
-    is_continuous = false;
-    is_start = true;
-    is_stop = false;
-    commands();
+      #if (SERIAL_TRACE_LEVEL > SERIAL_TRACE_LEVEL_OFF)
+      strcpy(buffer, "ONESHOT START");
+      #endif
+      is_oneshot = true;
+      is_continuous = false;
+      is_start = true;
+      is_stop = false;
+      commands();
     break;
 
     case I2C_RAIN_COMMAND_ONESHOT_STOP:
-    #if (SERIAL_TRACE_LEVEL > SERIAL_TRACE_LEVEL_OFF)
-    strcpy(buffer, "ONESHOT STOP");
-    #endif
-    is_oneshot = true;
-    is_continuous = false;
-    is_start = false;
-    is_stop = true;
-    commands();
+      #if (SERIAL_TRACE_LEVEL > SERIAL_TRACE_LEVEL_OFF)
+      strcpy(buffer, "ONESHOT STOP");
+      #endif
+      is_oneshot = true;
+      is_continuous = false;
+      is_start = false;
+      is_stop = true;
+      commands();
     break;
 
     case I2C_RAIN_COMMAND_ONESHOT_START_STOP:
-    #if (SERIAL_TRACE_LEVEL > SERIAL_TRACE_LEVEL_OFF)
-    strcpy(buffer, "ONESHOT START-STOP");
-    #endif
-    is_oneshot = true;
-    is_continuous = false;
-    is_start = true;
-    is_stop = true;
-    commands();
+      #if (SERIAL_TRACE_LEVEL > SERIAL_TRACE_LEVEL_OFF)
+      strcpy(buffer, "ONESHOT START-STOP");
+      #endif
+      is_oneshot = true;
+      is_continuous = false;
+      is_start = true;
+      is_stop = true;
+      commands();
     break;
 
     case I2C_RAIN_COMMAND_SAVE:
-    is_oneshot = false;
-    is_continuous = false;
-    is_start = false;
-    is_stop = false;
-    SERIAL_DEBUG("Execute command [ SAVE ]\r\n");
-    save_configuration(CONFIGURATION_CURRENT);
+      is_oneshot = false;
+      is_continuous = false;
+      is_start = false;
+      is_stop = false;
+      SERIAL_DEBUG("Execute command [ SAVE ]\r\n");
+      save_configuration(CONFIGURATION_CURRENT);
     break;
   }
 

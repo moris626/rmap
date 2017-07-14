@@ -128,10 +128,10 @@ typedef enum {
   IS_SENSOR_GETTED,
   READ_SENSOR,
   END_SENSOR_READING,
-  END_TASK,
   END_SENSOR,
-  WAIT_STATE
-} sensor_state_t;
+  END_SENSOR_TASK,
+  WAIT_SENSOR_STATE
+} sensor_reading_state_t;
 
 /**********************************************************************
  * GLOBAL VARIABLE
@@ -262,7 +262,7 @@ bool is_sensor_hyt_prepared;
 bool is_sensor_hyt_setted;
 #endif
 
-sensor_state_t sensor_state;
+sensor_reading_state_t sensor_reading_state;
 
 /**********************************************************************
  * FUNCTIONS
