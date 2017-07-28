@@ -20,58 +20,57 @@
 
 #include <SPI.h>
 
-#include <Client.h>
+#include <sim800Client.h>
 
 class IPStack 
 {
 public:    
-    IPStack(Client& client) : client(&client)
+    IPStack(sim800Client& client) : client(&client)
     {
 
     }
     
     int connect(char* hostname, int port)
     {
-        return client->connect(hostname, port);
+      if (client->connect(hostname, port)) return 1;
+      return 0;
     }
 
     int connect(uint32_t hostname, int port)
     {
-        return client->connect(hostname, port);
+      if (client->connect(hostname, port)) return 1;
+      return 0;
     }
 
-    int read(unsigned char* buffer, int len, int timeout)
+    int read(unsigned char* buffer, int len, unsigned long timeout)
     {
-        int interval = 10;  // all times are in milliseconds
-		int total = 0, rc = -1;
-
-		if (timeout < 30)
-			interval = 2;
-		while (client->available() < len && total < timeout)
-		{
-			delay(interval);
-			total += interval;
-		}
-		if (client->available() >= len)
-			rc = client->readBytes((char*)buffer, len);
-		return rc;
+      //Serial.print("+ read timeout: ");
+      //Serial.println(timeout);
+      client->setTimeout(timeout);  
+      int rc=(int)client->readBytes((char*)buffer, len);
+      //Serial.print("+ read wanted: ");
+      //Serial.println(len);
+      //Serial.print("+ read getted: ");
+      //Serial.println(rc);
+      return rc;
     }
     
-    int write(unsigned char* buffer, int len, int timeout)
+    int write(unsigned char* buffer, int len, unsigned long timeout)
     {
-      //client->setTimeout(timeout);  
-		return client->write((uint8_t*)buffer, len);
+      //Serial.print("write timeout: ");
+      //Serial.println(timeout);
+      return client->write((uint8_t*)buffer, len);
     }
     
     int disconnect()
     {
         client->stop();
-        return 0;
+        return 1;
     }
 
 private:
 
-    Client* client;
+    sim800Client* client;
 };
 
 #endif
