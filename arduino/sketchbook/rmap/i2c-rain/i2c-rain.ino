@@ -36,9 +36,8 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "i2c-rain.h"
 
 void setup() {
-  wdt_disable();
-  wdt_enable(WDTO_4S);
-  TRACE_BEGIN(230400);
+  init_wdt();
+  TRACE_BEGIN(115200);
   init_pins();
   load_configuration();
   init_buffers();
@@ -52,43 +51,36 @@ void loop() {
   switch (state) {
     case INIT:
       init_tasks();
+      init_sensors();
+
       state = TASKS_EXECUTION;
-      wdt_timer.interrupt_count = WDT_INTERRUPT_COUNT_DEFAULT;
-      break;
+      wdt_reset();
+    break;
 
     #if (USE_POWER_DOWN)
     case ENTER_POWER_DOWN:
-      #if (USE_WDT_TO_WAKE_UP_FROM_SLEEP == false)
       wdt_disable();
-      #endif
-
       power_down(&awakened_event_occurred_time_ms);
-
-      #if (USE_WDT_TO_WAKE_UP_FROM_SLEEP == false)
-      wdt_init(WDT_TIMER);
-      #endif
-
       state = TASKS_EXECUTION;
-      wdt_timer.interrupt_count = WDT_INTERRUPT_COUNT_DEFAULT;
+      init_wdt();
       break;
     #endif
 
     case TASKS_EXECUTION:
-      if (is_event_tipping_bucket && configuration.is_oneshot && is_oneshot && is_start)
+      if (is_event_tipping_bucket && configuration.is_oneshot && is_oneshot && is_start) {
         tipping_bucket_task();
+        wdt_reset();
+      }
 
-      #if (USE_WDT_TASK)
-      if (is_event_wdt)
-        wdt_task();
-      #endif
-
-      if (is_event_command_task)
+      if (is_event_command_task) {
         command_task();
+        wdt_reset();
+      }
 
-      if (!ready_tasks_count)
+      wdt_reset();
+
+      if (ready_tasks_count == 0)
         state = END;
-
-      wdt_timer.interrupt_count = WDT_INTERRUPT_COUNT_DEFAULT;
       break;
 
     case END:
@@ -97,7 +89,7 @@ void loop() {
       #else
       state = TASKS_EXECUTION;
       #endif
-      wdt_timer.interrupt_count = WDT_INTERRUPT_COUNT_DEFAULT;
+      wdt_reset();
       break;
   }
 }
@@ -120,10 +112,6 @@ void init_tasks() {
   is_event_command_task = false;
   is_event_tipping_bucket = false;
 
-  #if (USE_WDT_TASK)
-  is_event_wdt = false;
-  #endif
-
   rain_tips_event_occurred_time_ms = 0;
   interrupts();
 }
@@ -139,8 +127,6 @@ void init_wire() {
   Wire.setClock(I2C_BUS_CLOCK);
   Wire.onRequest(i2c_request_interrupt_handler);
   Wire.onReceive(i2c_receive_interrupt_handler);
-  digitalWrite(SDA, LOW);
-  digitalWrite(SCL, LOW);
 }
 
 void init_spi() {
@@ -150,13 +136,20 @@ void init_rtc() {
 }
 
 void init_system() {
-  wdt_disable();
-  wdt_timer.value = 0;
-  wdt_timer.interrupt_count = WDT_INTERRUPT_COUNT_DEFAULT;
+  #if (USE_POWER_DOWN)
   set_sleep_mode(SLEEP_MODE_PWR_DOWN);
   awakened_event_occurred_time_ms = millis();
-  wdt_init(WDT_TIMER);
+  #endif
   state = INIT;
+}
+
+void init_wdt() {
+  wdt_disable();
+  wdt_reset();
+  wdt_enable(WDT_TIMER);
+}
+
+void init_sensors () {
 }
 
 void print_configuration() {
@@ -217,31 +210,6 @@ void tipping_bucket_interrupt_handler() {
   }
 }
 
-ISR(WDT_vect) {
-  wdt_timer.interrupt_count--;
-
-  if (wdt_timer.interrupt_count == 0) {
-    wdt_disable();
-    wdt_reset();
-    wdt_enable(WDTO_15MS);
-    while(1);
-  }
-
-  if (wdt_timer.value == WDT_TIMER_MAX_VALUE)
-    wdt_timer.value = 0;
-
-  wdt_timer.value += WDT_OFFSET;
-
-  #if (USE_WDT_TASK)
-  noInterrupts();
-  if (!is_event_wdt) {
-    is_event_wdt = true;
-    ready_tasks_count++;
-  }
-  interrupts();
-  #endif
-}
-
 void i2c_request_interrupt_handler() {
   Wire.write((uint8_t *)readable_data_read_ptr+readable_data_address, readable_data_length);
 }
@@ -279,15 +247,6 @@ void tipping_bucket_task() {
     interrupts();
   }
 }
-
-#if (USE_WDT_TASK)
-void wdt_task() {
-  noInterrupts();
-  is_event_wdt = false;
-  ready_tasks_count--;
-  interrupts();
-}
-#endif
 
 void exchange_buffers() {
   readable_data_temp_ptr = readable_data_write_ptr;

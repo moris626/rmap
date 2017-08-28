@@ -95,18 +95,6 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 */
 #define WDT_INTERRUPT_COUNT_DEFAULT                 (2)
 
-/*!
-  \def USE_WDT_TASK
-  Enable or disable timed tasks.
-*/
-#define USE_WDT_TASK                                (false)
-
-/*!
-  \def USE_WDT_TO_WAKE_UP_FROM_SLEEP
-  Enable or disable watchdog wake up from sleep
-*/
-#define USE_WDT_TO_WAKE_UP_FROM_SLEEP               (false)
-
 /**********************************************************************
  * TIPPING BUCKET RAIN GAUGE
  *********************************************************************/

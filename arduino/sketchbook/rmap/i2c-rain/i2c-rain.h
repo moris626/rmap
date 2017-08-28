@@ -195,14 +195,15 @@ rain_t rain;
 /**********************************************************************
  * FUNCTIONS
  *********************************************************************/
-void init_systems(void);
-void init_buffers(void);
-void init_tasks(void);
-void init_pins(void);
-void init_wire(void);
-void init_spi(void);
-void init_rtc(void);
-void init_sensors(void);
+ void init_systems(void);
+ void init_buffers(void);
+ void init_tasks(void);
+ void init_pins(void);
+ void init_wire(void);
+ void init_spi(void);
+ void init_rtc(void);
+ void init_sensors(void);
+ void init_wdt(void);
 
 /*! \fn void print_configuration(void)
  *  \brief Print configuration.
@@ -246,16 +247,6 @@ volatile bool is_event_command_task;
  *  \return void.
  */
 void command_task(void);
-
-#if (USE_WDT_TASK)
-volatile bool is_event_wdt;
-
-/*! \fn void wdt_task(void)
- *  \brief Temporized task.
- *  \return void.
- */
-void wdt_task(void);
-#endif
 
 /**********************************************************************
  * INTERRUPT HANDLER
