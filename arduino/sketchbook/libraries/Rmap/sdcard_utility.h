@@ -17,20 +17,15 @@ You should have received a copy of the GNU General Public License
 along with this program.  If not, see <http://www.gnu.org/licenses/>.
 **********************************************************************/
 
-#ifndef _RMAP_UTIL_H
-#define _RMAP_UTIL_H
+#ifndef _SDCARD_UTILITY_H
+#define _SDCARD_UTILITY_H
 
-#include <string.h>
-#include <stdlib.h>
-#include <stdint.h>
-#include "stima_module.h"
+#include <SdFat.h>
+#include <Time.h>
+#include <sdcard_config.h>
 
-void getStimaNameByType(char *, uint8_t);
-void stringToArray(uint8_t *, char *, const char *, uint8_t);
-
-#define macStringToArray(mac, string)     (stringToArray(mac, string, ":", 16))
-#define ipStringToArray(ip, string)       (stringToArray(ip, string, ".", 10))
-#define dateStringToArray(date, string)   (stringToArray(date, string, "-", 10))
-#define timeStringToArray(time, string)   (stringToArray(time, string, ":", 10))
+bool sdcard_init(SdFat *SD, uint8_t chip_select);
+bool sdcard_open_file(SdFat *SD, File *file, const char *file_name, uint8_t param);
+void sdcard_make_filename(time_t time, char *file_name);
 
 #endif

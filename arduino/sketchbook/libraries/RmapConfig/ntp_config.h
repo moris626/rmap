@@ -5,5 +5,4 @@
 
 #define NTP_DEFAULT_SERVER    ("pool.ntp.org")
 
-
 #endif

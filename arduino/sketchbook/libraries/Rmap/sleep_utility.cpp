@@ -41,6 +41,7 @@ void wdt_init(uint8_t timer) {
  */
 void power_down(uint32_t *awakened_event_occurred_time_ms) {
   if (millis() - *awakened_event_occurred_time_ms > DEBOUNCING_POWER_DOWN_TIME_MS) {
+		*awakened_event_occurred_time_ms = millis();
     adc_disable();
     noInterrupts ();
     sleep_enable();
@@ -51,6 +52,5 @@ void power_down(uint32_t *awakened_event_occurred_time_ms) {
     interrupts ();  // guarantees next instruction executed
     sleep_cpu();
     sleep_disable();
-    *awakened_event_occurred_time_ms = millis();
   }
 }

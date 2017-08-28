@@ -1,6 +1,8 @@
 #ifndef _TYPEDEF_H
 #define _TYPEDEF_H
 
+#include <mqtt_config.h>
+
 typedef struct {
   char driver[5];
   char type[5];

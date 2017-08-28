@@ -16,8 +16,19 @@
 #define LCD_TRACE_LEVEL_INFO              (3)
 #define LCD_TRACE_LEVEL_DEBUG             (4)
 
+#define OK_STRING                         ("OK")
+#define ERROR_STRING                      ("ERROR")
+#define FAIL_STRING                       ("FAIL")
+#define YES_STRING                        ("YES")
+#define NO_STRING                         ("NO")
+#define ON_STRING                         ("ON")
+#define OFF_STRING                        ("OFF")
+
 // SensorDriver
 #define SENSOR_DRIVER_SERIAL_TRACE_LEVEL  (SERIAL_TRACE_LEVEL_OFF)
+
+// Sim800
+#define SIM800_SERIAL_TRACE_LEVEL         (SERIAL_TRACE_LEVEL_INFO)
 
 // I2C-TH
 #define I2C_TH_SERIAL_TRACE_LEVEL         (SERIAL_TRACE_LEVEL_INFO)

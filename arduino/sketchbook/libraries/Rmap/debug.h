@@ -19,6 +19,8 @@
 #define UINT32  (6)
 #define FLOAT   (7)
 
+#define DEBUG_WAIT_FOR_SLEEP_MS           (10)
+
 #define TRACE_PRINTF_BUFFER_LENGTH        (256)
 
 char *trace_printf(char *ptr, const char *fmt, ...);

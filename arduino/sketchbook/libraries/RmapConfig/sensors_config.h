@@ -1,7 +1,7 @@
 #ifndef SENSOR_CONFIG_H
 #define SENSOR_CONFIG_H
 
-#define USE_JSON                    (true)   // use ajson library for json response
+#define USE_JSON                    (true)   // use json library for json response
 
 #define USE_SENSOR_ADT              (false)   // ADT7420
 #define USE_SENSOR_HIH              (false)   // HIH6100
@@ -39,5 +39,9 @@
 #if ((REPORT_MINUTES % OBSERVATIONS_MINUTES) != 0)
 #error OBSERVATIONS_MINUTES must be multiple of REPORT_MINUTES !!!
 #endif
+
+#define VALUES_TO_READ_FROM_SENSOR_COUNT              (2)
+#define SENSORS_RETRY_COUNT_MAX                       (5)
+#define SENSORS_RETRY_DELAY_MS                        (50)
 
 #endif
