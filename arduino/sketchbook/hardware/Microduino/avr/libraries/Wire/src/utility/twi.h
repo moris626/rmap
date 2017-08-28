@@ -21,6 +21,7 @@
 #define twi_h
 
   #include <inttypes.h>
+  #include <hardware_config.h>
 
   //#define ATMEGA8
 
@@ -37,7 +38,7 @@
   #define TWI_MTX   2
   #define TWI_SRX   3
   #define TWI_STX   4
-  
+
   void twi_init(void);
   void twi_disable(void);
   void twi_setAddress(uint8_t);
@@ -50,6 +51,6 @@
   void twi_reply(uint8_t);
   void twi_stop(void);
   void twi_releaseBus(void);
+  // void twi_reset(void);
 
 #endif
-
