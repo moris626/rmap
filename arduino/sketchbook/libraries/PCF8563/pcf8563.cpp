@@ -76,6 +76,30 @@ namespace Pcf8563 {
     return true;
   }
 
+  bool getClockoutControl(uint8_t *clockout_control) {
+    Wire.beginTransmission(PCF8563_READ_ADDRESS);
+    Wire.write(PCF8563_CLKOUT_CONTROL_ADDRESS);
+    if (Wire.endTransmission())
+      return false;
+
+    Wire.requestFrom(PCF8563_READ_ADDRESS, PCF8563_CLKOUT_CONTROL_LENGTH);
+    if (Wire.available() < PCF8563_CLKOUT_CONTROL_LENGTH)
+      return false;
+
+    *clockout_control = Wire.read();
+    return true;
+  }
+
+  bool setClockoutControl(uint8_t clockout_control) {
+    Wire.beginTransmission(PCF8563_READ_ADDRESS);
+    Wire.write(PCF8563_CLKOUT_CONTROL_ADDRESS);
+    Wire.write(clockout_control);
+    if (Wire.endTransmission())
+      return false;
+
+    return true;
+  }
+
   bool getTimerControl(uint8_t *timer_control) {
     Wire.beginTransmission(PCF8563_READ_ADDRESS);
     Wire.write(PCF8563_TIMER_CONTROL_ADDRESS);
@@ -217,6 +241,63 @@ namespace Pcf8563 {
     return true;
   }
 
+  bool enableClockout() {
+    uint8_t clockout_control;
+
+    if (!getClockoutControl(&clockout_control))
+      return false;
+
+    // set FE (enable clockout)
+    clockout_control |= PCF8563_CLKOUT_CONTROL_FE_BIT;
+
+    if (!setClockoutControl(clockout_control))
+      return false;
+
+    return true;
+  }
+
+  bool disableClockout() {
+    uint8_t clockout_control;
+
+    if (!getClockoutControl(&clockout_control))
+      return false;
+
+    // reset FE (disable clockout)
+    clockout_control &= ~PCF8563_CLKOUT_CONTROL_FE_BIT;
+
+    if (!setClockoutControl(clockout_control))
+      return false;
+
+    return true;
+  }
+
+  bool setClockoutFrequency(uint8_t frequency) {
+    uint8_t clockout_control;
+
+    if (!getClockoutControl(&clockout_control))
+      return false;
+
+    // reset FD (frequency)
+    clockout_control &= ~PCF8563_CLKOUT_CONTROL_FD_BIT;
+
+    // set FD (frequency)
+    clockout_control |= frequency;
+
+    if (!setClockoutControl(clockout_control))
+      return false;
+
+    return true;
+  }
+
+  bool isClockoutActive() {
+    uint8_t clockout_control;
+
+    if (!getClockoutControl(&clockout_control))
+      return false;
+
+    return clockout_control & PCF8563_CLKOUT_CONTROL_FE_BIT;
+  }
+
   bool enableAlarm() {
     uint8_t control_status_2;
 
@@ -314,9 +395,6 @@ namespace Pcf8563 {
   bool setAlarm(uint8_t hours, uint8_t minutes, uint8_t day, uint8_t weekday) {
     if ((hours != PCF8563_ALARM_DISABLE && hours > 23) || (minutes != PCF8563_ALARM_DISABLE && minutes > 59) || (day != PCF8563_ALARM_DISABLE && day > 31) || (weekday != PCF8563_ALARM_DISABLE && weekday > 6))
       return false;
-
-    // if (!enableAlarm())
-      // return false;
 
     if (hours == PCF8563_ALARM_DISABLE) {
       hours = 0;

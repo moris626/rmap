@@ -66,8 +66,12 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #define PCF8563_TIMER_CONTROL_TE_BIT        (0b10000000)  // BIT 7: Timer Enable (0: disable, 1: enable)
 #define PCF8563_TIMER_CONTROL_TD_BIT        (0b00000011)  // BIT 0-1: 00: 4096 KHz, 01: 64 Hz, 10: 1 Hz, 11: 1/60 Hz
 
+#define PCF8563_CLKOUT_CONTROL_FE_BIT       (0b10000000)  // BIT 7: Clkout Enable (0: disable, 1: enable)
+#define PCF8563_CLKOUT_CONTROL_FD_BIT       (0b00000011)  // BIT 0-1: Frequency clock: 00: 32768 KHz, 01: 1024 Hz, 10: 32 Hz, 11: 1 Hz
+
 #define PCF8563_CONTROL_STATUS_2_LENGTH     (1)
 #define PCF8563_TIMER_CONTROL_LENGTH        (1)
+#define PCF8563_CLKOUT_CONTROL_LENGTH       (1)
 #define PCF8563_DATE_LENGTH                 (4)
 #define PCF8563_TIME_LENGTH                 (3)
 #define PCF8563_ALARM_LENGTH                (4)
@@ -82,12 +86,23 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #define PCF8563_TIMER_FREQUENCY_SECONDS     (PCF8563_TIMER_FREQUENCY_1_HZ)
 #define PCF8563_TIMER_FREQUENCY_MINUTES     (PCF8563_TIMER_FREQUENCY_1_60_HZ)
 
+#define PCF8563_CLKOUT_FREQUENCY_32768_KHZ  (0b00000000)
+#define PCF8563_CLKOUT_FREQUENCY_1024_HZ    (0b00000001)
+#define PCF8563_CLKOUT_FREQUENCY_32_HZ      (0b00000010)
+#define PCF8563_CLKOUT_FREQUENCY_1_HZ       (0b00000011)
+
+#define PCF8563_CLKOUT_FREQUENCY_SECONDS    (PCF8563_CLKOUT_FREQUENCY_1_HZ)
+
 namespace Pcf8563 {
   bool reset(void);
   bool getControlStatus2(uint8_t *control_status_2);
   bool setControlStatus2(uint8_t control_status_2);
   bool getTimerControl(uint8_t *timer_control);
   bool setTimerControl(uint8_t timer_control);
+  bool enableClockout(void);
+  bool disableClockout(void);
+  bool setClockoutFrequency(uint8_t frequency);
+  bool isClockoutActive(void);
   bool enableAlarm(void);
   bool disableAlarm(void);
   bool resetAlarm(void);
