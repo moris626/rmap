@@ -192,6 +192,8 @@ void SensorDriverHyt271::setup(const uint8_t address, const uint8_t node) {
   SensorDriver::printInfo(_driver, _type, _address, _node);
   #endif
 
+  *_is_setted = true;
+  
   SERIAL_DEBUG(" setup... [ OK ]\r\n");
 }
 
