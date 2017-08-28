@@ -37,8 +37,9 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 void setup() {
   wdt_disable();
-  wdt_enable(WDTO_4S);
-  TRACE_BEGIN(230400);
+  wdt_reset();
+  wdt_enable(WDTO_8S);
+  TRACE_BEGIN(115200);
   init_pins();
   load_configuration();
   init_buffers();
@@ -139,8 +140,6 @@ void init_wire() {
   Wire.setClock(I2C_BUS_CLOCK);
   Wire.onRequest(i2c_request_interrupt_handler);
   Wire.onReceive(i2c_receive_interrupt_handler);
-  // digitalWrite(SDA, LOW);
-  // digitalWrite(SCL, LOW);
 }
 
 void init_spi() {
@@ -260,9 +259,9 @@ void init_sensors () {
 }
 
 ISR(WDT_vect) {
-  wdt_timer.interrupt_count--;
-
-  if (wdt_timer.interrupt_count == 0) {
+  if (wdt_timer.interrupt_count)
+    wdt_timer.interrupt_count--;
+  else {
     wdt_disable();
     wdt_reset();
     wdt_enable(WDTO_15MS);

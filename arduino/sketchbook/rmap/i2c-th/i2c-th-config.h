@@ -123,6 +123,10 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
  * HUMIDITY AND TEMPERATURE SENSORS
  *********************************************************************/
 
+ // sampling every 3-15 seconds --> watchdog timer (SAMPLE_SECONDS in relative modules)
+ // observations with processing every 1-10 minutes (minutes for processing sampling)
+ // report every 5-60 minutes (> OBSERVATIONS_MINUTES)
+
 /*!
   \def SAMPLE_SECONDS
   Seconds for sampling sensors.
