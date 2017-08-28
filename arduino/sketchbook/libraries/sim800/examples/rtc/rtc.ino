@@ -76,10 +76,10 @@ void setup()
     delay(5000);
     Serial.println("try to init sim800");
 
-#ifdef HARDWARESERIAL
+#ifdef SIM800_SERIAL_PORT
     if (s800.init( 7, 6)) break;
 #else
-    FOR THIS EXAMPLE YOU HAVE TO SET HARDWARESERIAL STATIC IN SIM800 LIBRARY
+    FOR THIS EXAMPLE YOU HAVE TO SET SIM800_SERIAL_PORT STATIC IN SIM800 LIBRARY
       //if (s800.init(&Serial1 , 7, 6)) break;
 #endif
 

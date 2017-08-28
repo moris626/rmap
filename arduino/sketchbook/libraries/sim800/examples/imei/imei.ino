@@ -28,7 +28,7 @@ void setup()
     delay(5000);
     Serial.println("try to init sim800");
 
-#ifdef HARDWARESERIAL
+#ifdef SIM800_SERIAL_PORT
     if (s800.init( 7, 6)) break;
 #else
     if (s800.init(&Serial1 , 7, 6)) break;
