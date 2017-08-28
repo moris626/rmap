@@ -31,11 +31,19 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include <stdint.h>
 #include <string.h>
 #include <EthernetUdp2.h>
+#include <sim800Client.h>
 
-namespace Ntp {
-  bool sendRequest(EthernetUDP *, const char *);
-  bool getResponse(EthernetUDP *);
-  uint32_t getTime();
+class Ntp {
+public:
+   static bool sendRequest(EthernetUDP *client, const char *server);
+   static uint32_t getResponse(EthernetUDP *client);
+
+   static bool sendRequest(sim800Client *client);
+   static uint32_t getResponse(sim800Client *client);
+
+private:
+   static void makePacket(uint8_t *ntp_packet);
+   static uint32_t extractTime(uint8_t *ntp_packet);
 };
 
 #endif

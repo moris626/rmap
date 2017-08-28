@@ -19,49 +19,72 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 #include "ntp.h"
 
-namespace Ntp {
-  uint8_t ntp_buffer[NTP_PACKET_LENGTH];
-  uint32_t seconds_since_1900;
+void Ntp::makePacket(uint8_t *ntp_packet) {
+   memset(ntp_packet, 0, NTP_PACKET_LENGTH);
+   ntp_packet[0] = 0b11100011;   // LI, Version, Mode
+   ntp_packet[1] = 0;            // Stratum, or type of clock
+   ntp_packet[2] = 6;            // Polling Interval
+   ntp_packet[3] = 0xEC;         // Peer Clock Precision
+   ntp_packet[12]  = 49;
+   ntp_packet[13]  = 0x4E;
+   ntp_packet[14]  = 49;
+   ntp_packet[15]  = 52;
+}
 
-  bool sendRequest(EthernetUDP *client, const char *server) {
-    memset(ntp_buffer, 0, NTP_PACKET_LENGTH);
-    ntp_buffer[0] = 0b11100011;   // LI, Version, Mode
-    ntp_buffer[1] = 0;     // Stratum, or type of clock
-    ntp_buffer[2] = 6;     // Polling Interval
-    ntp_buffer[3] = 0xEC;  // Peer Clock Precision
-    ntp_buffer[12]  = 49;
-    ntp_buffer[13]  = 0x4E;
-    ntp_buffer[14]  = 49;
-    ntp_buffer[15]  = 52;
+uint32_t Ntp::extractTime(uint8_t *ntp_packet) {
+   uint32_t seconds_since_1900;
+   seconds_since_1900 =  (uint32_t) ntp_packet[NTP_RECEIVE_TIMESTAMP_OFFSET] << 24;
+   seconds_since_1900 |= (uint32_t) ntp_packet[NTP_RECEIVE_TIMESTAMP_OFFSET+1] << 16;
+   seconds_since_1900 |= (uint32_t) ntp_packet[NTP_RECEIVE_TIMESTAMP_OFFSET+2] << 8;
+   seconds_since_1900 |= (uint32_t) ntp_packet[NTP_RECEIVE_TIMESTAMP_OFFSET+3];
+   seconds_since_1900 = seconds_since_1900 - NTP_70_YEARS_SECONDS + NTP_TIMEZONE * NTP_1_HOUR_SECONDS;
+   return seconds_since_1900;
+}
 
-    if (!client->beginPacket(server, NTP_SERVER_PORT))
+bool Ntp::sendRequest(EthernetUDP *client, const char *server) {
+   uint8_t ntp_buffer[NTP_PACKET_LENGTH];
+   makePacket(ntp_buffer);
+
+   if (!client->beginPacket(server, NTP_SERVER_PORT)) {
       return false;
+   }
 
-    if (!client->write(ntp_buffer, NTP_PACKET_LENGTH))
+   if (!client->write(ntp_buffer, NTP_PACKET_LENGTH)) {
       return false;
+   }
 
-    if (!client->endPacket())
+   if (!client->endPacket()) {
       return false;
+   }
 
-    return true;
-  }
+   return true;
+}
 
-  bool getResponse (EthernetUDP *client) {
-    if (client->parsePacket() < NTP_PACKET_LENGTH)
-      return false;
+uint32_t Ntp::getResponse (EthernetUDP *client) {
+   uint8_t ntp_buffer[NTP_PACKET_LENGTH];
+   if (client->parsePacket() < NTP_PACKET_LENGTH) {
+      return 0;
+   }
 
-    if (client->read(ntp_buffer, NTP_PACKET_LENGTH) <= 0)
-      return false;
+   if (client->read(ntp_buffer, NTP_PACKET_LENGTH) <= 0) {
+      return 0;
+   }
 
-    seconds_since_1900 =  (uint32_t) ntp_buffer[NTP_RECEIVE_TIMESTAMP_OFFSET] << 24;
-    seconds_since_1900 |= (uint32_t) ntp_buffer[NTP_RECEIVE_TIMESTAMP_OFFSET+1] << 16;
-    seconds_since_1900 |= (uint32_t) ntp_buffer[NTP_RECEIVE_TIMESTAMP_OFFSET+2] << 8;
-    seconds_since_1900 |= (uint32_t) ntp_buffer[NTP_RECEIVE_TIMESTAMP_OFFSET+3];
-    seconds_since_1900 = seconds_since_1900 - NTP_70_YEARS_SECONDS + NTP_TIMEZONE * NTP_1_HOUR_SECONDS;
-    return true;
-  }
+   return extractTime(ntp_buffer);
+}
 
-  uint32_t getTime() {
-    return seconds_since_1900;
-  }
+bool Ntp::sendRequest(sim800Client *client) {
+   uint8_t ntp_buffer[NTP_PACKET_LENGTH];
+   makePacket(ntp_buffer);
+   return client->write(ntp_buffer, NTP_PACKET_LENGTH);
+}
+
+uint32_t Ntp::getResponse (sim800Client *client) {
+   uint8_t ntp_buffer[NTP_PACKET_LENGTH];
+
+   if (client->readBytes(ntp_buffer, NTP_PACKET_LENGTH) <= 0) {
+      return 0;
+   }
+
+   return extractTime(ntp_buffer);
 }
