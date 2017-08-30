@@ -148,22 +148,22 @@ enum {
 } state;
 
 typedef enum {
-   INIT_SUPERVISOR,
-   INIT_RTC_LEVEL_TASKS,
-   INIT_CONNECTION_LEVEL_TASKS,
-   INIT_NTP_LEVEL_TASKS,
-   END_SUPERVISOR,
-   END_SUPERVISOR_TASK,
-   WAIT_SUPERVISOR_STATE
+   SUPERVISOR_INIT,
+   SUPERVISOR_RTC_LEVEL_TASK,
+   SUPERVISOR_CONNECTION_LEVEL_TASK,
+   SUPERVISOR_NTP_LEVEL_TASK,
+   SUPERVISOR_MANAGE_LEVEL_TASK,
+   SUPERVISOR_END,
+   SUPERVISOR_WAIT_STATE
 } supervisor_state_t;
 
 #if (MODULE_TYPE == STIMA_MODULE_TYPE_SAMPLE_ETH || MODULE_TYPE == STIMA_MODULE_TYPE_REPORT_ETH)
 typedef enum {
-   INIT_ETHERNET,
+   ETHERNET_INIT,
    ETHERNET_CONNECT,
    ETHERNET_OPEN_UDP_SOCKET,
-   END_ETHERNET,
-   WAIT_ETHERNET_STATE
+   ETHERNET_END,
+   ETHERNET_WAIT_STATE
 } ethernet_state_t;
 
 #elif (MODULE_TYPE == STIMA_MODULE_TYPE_SAMPLE_GSM || MODULE_TYPE == STIMA_MODULE_TYPE_REPORT_GSM)
@@ -186,63 +186,96 @@ typedef enum {
 #endif
 
 typedef enum {
-   INIT_SENSOR,
-   PREPARE_SENSOR,
-   IS_SENSOR_PREPARED,
-   GET_SENSOR,
-   IS_SENSOR_GETTED,
-   READ_SENSOR,
-   END_SENSOR_READING,
-   END_SENSOR,
-   END_SENSOR_TASK,
-   WAIT_SENSOR_STATE
-} sensor_reading_state_t;
+   SENSORS_READING_INIT,
+   SENSORS_READING_PREPARE,
+   SENSORS_READING_IS_PREPARED,
+   SENSORS_READING_GET,
+   SENSORS_READING_IS_GETTED,
+   SENSORS_READING_READ,
+   SENSORS_READING_NEXT,
+   SENSORS_READING_END,
+   SENSORS_READING_WAIT_STATE
+} sensors_reading_state_t;
 
 typedef enum {
-   INIT_TIME,
+   TIME_INIT,
    TIME_SEND_ONLINE_REQUEST,
    TIME_WAIT_ONLINE_RESPONSE,
    TIME_SET_SYNC_RTC_PROVIDER,
-   END_TIME,
-   END_TIME_TASK,
-   WAIT_TIME_STATE
+   TIME_END,
+   TIME_WAIT_STATE
 } time_state_t;
 
 typedef enum {
-   INIT_DATA_PROCESSING,
-   INIT_SDCARD_SERVICE,
-   OPEN_SDCARD_PTR_DATA_FILES,
-   OPEN_SDCARD_WRITE_DATA_FILE,
-   OPEN_SDCARD_READ_DATA_FILE,
-   READ_PTR_DATA,
-   FIND_PTR_DATA,
-   FOUND_PTR_DATA,
-   END_FIND_PTR,
-   END_SDCARD_SERVICE,
-   INIT_MQTT_SERVICE,
-   CHECK_CLIENT_CONNECTION_STATUS,
-   CONNECT_MQTT_SERVICE,
-   SUBSCRIBE_MQTT_SERVICE,
-   END_MQTT_SERVICE,
-   LOOP_JSON_TO_MQTT,
-   LOOP_SD_TO_MQTT,
-   LOOP_MQTT_TO_X,
-   WRITE_DATA_TO_X,
-   WAIT_DATA_PROCESSING_STATE,
-   UPDATE_PTR_DATA,
-   END_DATA_PROCESSING,
-   END_DATA_PROCESSING_TASK,
-} data_processing_state_t;
+   DATA_SAVING_INIT,
+   DATA_SAVING_OPEN_SDCARD,   // if not already open
+   DATA_SAVING_OPEN_FILE,
+   DATA_SAVING_SENSORS_LOOP,  // loop from 0 to sensors_count
+   DATA_SAVING_DATA_LOOP,     // loop from 0 to data_count
+   DATA_SAVING_WRITE_FILE,
+   DATA_SAVING_CLOSE_FILE,
+   DATA_SAVING_END,
+   DATA_SAVING_WAIT_STATE
+} data_saving_state_t;
 
 typedef enum {
-   INIT_MQTT,
-   CHECK_MQTT_OPERATION,
-   CONNECT_MQTT,
-   SUBSCRIBE_MQTT,
-   DISCONNECT_MQTT,
-   END_MQTT,
-   WAIT_MQTT_STATE
+   MQTT_INIT,
+
+   MQTT_OPEN_SDCARD,    // if not already open
+   MQTT_OPEN_PTR_FILE,
+   MQTT_PTR_READ,
+   MQTT_PTR_FIND,
+   MQTT_PTR_FOUND,
+   MQTT_PTR_END,
+
+   MQTT_OPEN,
+   MQTT_CHECK,
+   MQTT_CONNECT,
+   MQTT_SUBSCRIBE,
+
+   MQTT_OPEN_DATA_FILE,
+
+   MQTT_SENSORS_LOOP,   // loop from 0 to sensors_count
+   MQTT_DATA_LOOP,      // loop from 0 to data_count
+   MQTT_SD_LOOP,        // loop from first row to last row of data file
+   MQTT_PUBLISH,
+
+   MQTT_CLOSE_DATA_FILE,
+
+   MQTT_DISCONNECT,
+
+   MQTT_PTR_UPDATE,
+   MQTT_CLOSE_PTR_FILE,
+   MQTT_CLOSE_SDCARD,
+
+   MQTT_END,
+   MQTT_WAIT_STATE
 } mqtt_state_t;
+
+// typedef enum {
+//    DATA_PROCESSING_INIT,
+//    INIT_SDCARD_SERVICE,
+//    OPEN_SDCARD_PTR_DATA_FILES,
+//    OPEN_SDCARD_WRITE_DATA_FILE,
+//    OPEN_SDCARD_READ_DATA_FILE,
+//    READ_PTR_DATA,
+//    FIND_PTR_DATA,
+//    FOUND_PTR_DATA,
+//    END_FIND_PTR,
+//    END_SDCARD_SERVICE,
+//    INIT_MQTT_SERVICE,
+//    CHECK_CLIENT_CONNECTION_STATUS,
+//    CONNECT_MQTT_SERVICE,
+//    SUBSCRIBE_MQTT_SERVICE,
+//    END_MQTT_SERVICE,
+//    LOOP_JSON_TO_MQTT,
+//    LOOP_SD_TO_MQTT,
+//    LOOP_MQTT_TO_X,
+//    WRITE_DATA_TO_X,
+//    UPDATE_PTR_DATA,
+//    DATA_PROCESSING_END,
+//    DATA_PROCESSING_WAIT_STATE
+// } data_processing_state_t;
 
 /**********************************************************************
 * GLOBAL VARIABLE
@@ -308,9 +341,9 @@ System time (in millisecond) when the system has awakened from power down.
 uint32_t awakened_event_occurred_time_ms;
 
 SdFat SD;
-File data_file;
-File ptr_data_file;
-char file_name[SDCARD_FILES_NAME_MAX_LENGTH];
+File read_data_file;
+File write_data_file;
+File mqtt_ptr_file;
 
 #if (MODULE_TYPE == STIMA_MODULE_TYPE_SAMPLE_ETH || MODULE_TYPE == STIMA_MODULE_TYPE_REPORT_ETH)
 EthernetUDP eth_udp_client;
@@ -336,8 +369,16 @@ bool is_time_set;
 bool is_client_connected;
 bool is_client_udp_socket_open;
 bool is_event_client_executed;
-bool is_ntp_sync;
+bool do_ntp_sync;
 time_t last_ntp_sync;
+
+bool is_sdcard_open;
+bool is_sdcard_error;
+
+bool is_ptr_found;
+bool is_ptr_updated;
+
+bool is_mqtt_subscribed;
 
 char json_sensors_data[USE_SENSORS_COUNT][JSON_BUFFER_LENGTH];
 
@@ -363,8 +404,8 @@ gsm_state_t gsm_state;
 #endif
 
 time_state_t time_state;
-volatile sensor_reading_state_t sensor_reading_state;
-data_processing_state_t data_processing_state;
+volatile sensors_reading_state_t sensors_reading_state;
+data_saving_state_t data_saving_state;
 mqtt_state_t mqtt_state;
 
 /**********************************************************************
@@ -468,13 +509,21 @@ bool is_event_gsm;
 
 #endif
 
-/*! \fn void data_processing_task(void)
-*  \brief manage data to send over mqtt and to write in sdcard.
+/*! \fn void data_saving_task(void)
+*  \brief save data in sdcard.
 *  \return void.
 */
-void data_processing_task(void);
+void data_saving_task(void);
 
-volatile bool is_event_data_processing;
+bool is_event_data_saving;
+
+/*! \fn void mqtt_task(void)
+*  \brief send data over MQTT.
+*  \return void.
+*/
+void mqtt_task(void);
+
+bool is_event_mqtt;
 
 /**********************************************************************
 * INTERRUPT HANDLER

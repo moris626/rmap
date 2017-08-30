@@ -62,6 +62,12 @@ Delay for retry in data savings
 */
 #define DATA_PROCESSING_RETRY_DELAY_MS                (500)
 
+#define DATA_SAVING_RETRY_COUNT_MAX                   (3)
+#define DATA_SAVING_DELAY_MS                          (1000)
+
+#define MQTT_RETRY_COUNT_MAX                          (3)
+#define MQTT_DELAY_MS                                 (1000)
+
 #define GSM_CONNECT_RETRY_COUNT_MAX                   (10)
 #define GSM_CONNECT_DELAY_MS                          (5000)
 
@@ -89,10 +95,10 @@ Delay for retry in sd card management
 #define SDCARD_RETRY_DELAY_MS                         (100)
 
 /*!
-\def SDCARD_PTR_DATA_FILE_NAME
+\def SDCARD_MQTT_PTR_FILE_NAME
 Pointer for sensor data
 */
-#define SDCARD_PTR_DATA_FILE_NAME                     ("ptr_data.txt")
+#define SDCARD_MQTT_PTR_FILE_NAME                     ("mqtt_ptr.txt")
 
 /*!
 \def NTP_RETRY_COUNT_MAX
