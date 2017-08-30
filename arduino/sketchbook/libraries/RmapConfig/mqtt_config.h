@@ -9,7 +9,7 @@
 #define MQTT_USERNAME_LENGTH           (30)
 #define MQTT_PASSWORD_LENGTH           (30)
 
-#define MQTT_TIMEOUT_MS                (5000)
+#define MQTT_TIMEOUT_MS                (6000)
 
 #define MQTT_DEFAULT_SERVER            ("rmap.cc")
 #define MQTT_DEFAULT_PORT              (1883)
