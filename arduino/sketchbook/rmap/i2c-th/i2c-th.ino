@@ -122,7 +122,7 @@ void init_tasks() {
   is_event_command_task = false;
   is_event_sensors_reading = false;
 
-  sensor_reading_state = END_SENSOR_TASK;
+  sensors_reading_state = SENSORS_READING_INIT;
 
   #if (USE_WDT_TASK)
   is_event_wdt = false;
@@ -315,7 +315,6 @@ void wdt_task() {
   if (executeWdtTaskEach(SAMPLE_SECONDS) && configuration.is_continuous && is_continuous && is_start) {
     if (!is_event_sensors_reading) {
       noInterrupts();
-      sensor_reading_state = INIT_SENSOR;
       is_event_sensors_reading = true;
       ready_tasks_count++;
       interrupts();
@@ -527,69 +526,69 @@ void observations_processing_debug() {
 void sensors_reading_task () {
   static uint8_t i;
   static uint8_t retry;
-  static sensor_reading_state_t state_after_wait;
+  static sensors_reading_state_t state_after_wait;
   static uint32_t delay_ms;
   static uint32_t start_time_ms;
   static int32_t values_readed_from_sensor[2];
 
-  switch (sensor_reading_state) {
-    case INIT_SENSOR:
+  switch (sensors_reading_state) {
+    case SENSORS_READING_INIT:
       for (i=0; i<sensors_count; i++)
         sensors[i]->resetPrepared();
 
       i = 0;
       retry = 0;
-      state_after_wait = INIT_SENSOR;
-      sensor_reading_state = PREPARE_SENSOR;
+      state_after_wait = SENSORS_READING_INIT;
+      sensors_reading_state = SENSORS_READING_PREPARE;
       break;
 
-    case PREPARE_SENSOR:
+    case SENSORS_READING_PREPARE:
       sensors[i]->prepare();
       delay_ms = sensors[i]->getDelay();
       start_time_ms = sensors[i]->getStartTime();
-      state_after_wait = IS_SENSOR_PREPARED;
-      sensor_reading_state = WAIT_SENSOR_STATE;
+      state_after_wait = SENSORS_READING_IS_PREPARED;
+      sensors_reading_state = SENSORS_READING_WAIT_STATE;
       break;
 
-    case IS_SENSOR_PREPARED:
+    case SENSORS_READING_IS_PREPARED:
       // success
       if (sensors[i]->isPrepared()) {
-        sensor_reading_state = GET_SENSOR;
+        sensors_reading_state = SENSORS_READING_GET;
       }
       // retry
       else if ((++retry) < SENSORS_RETRY_COUNT_MAX) {
         delay_ms = SENSORS_RETRY_DELAY_MS;
         start_time_ms = millis();
-        state_after_wait = PREPARE_SENSOR;
-        sensor_reading_state = WAIT_SENSOR_STATE;
+        state_after_wait = SENSORS_READING_PREPARE;
+        sensors_reading_state = SENSORS_READING_WAIT_STATE;
       }
       // fail
-      else sensor_reading_state = END_SENSOR_READING;
+      else sensors_reading_state = SENSORS_READING_NEXT;
       break;
 
-    case GET_SENSOR:
+    case SENSORS_READING_GET:
       sensors[i]->get(values_readed_from_sensor, VALUES_TO_READ_FROM_SENSOR_COUNT);
       delay_ms = sensors[i]->getDelay();
       start_time_ms = sensors[i]->getStartTime();
-      state_after_wait = IS_SENSOR_GETTED;
-      sensor_reading_state = WAIT_SENSOR_STATE;
+      state_after_wait = SENSORS_READING_IS_GETTED;
+      sensors_reading_state = SENSORS_READING_WAIT_STATE;
       break;
 
-    case IS_SENSOR_GETTED:
+    case SENSORS_READING_IS_GETTED:
       // success and end
       if (sensors[i]->isEnd() && !sensors[i]->isReaded() && sensors[i]->isSuccess()) {
-        sensor_reading_state = READ_SENSOR;
+        sensors_reading_state = SENSORS_READING_READ;
       }
       // success and not end
       else if (sensors[i]->isSuccess()) {
-        sensor_reading_state = GET_SENSOR;
+        sensors_reading_state = SENSORS_READING_GET;
       }
       // retry
       else if ((++retry) < SENSORS_RETRY_COUNT_MAX) {
         delay_ms = SENSORS_RETRY_DELAY_MS;
         start_time_ms = millis();
-        state_after_wait = GET_SENSOR;
-        sensor_reading_state = WAIT_SENSOR_STATE;
+        state_after_wait = SENSORS_READING_GET;
+        sensors_reading_state = SENSORS_READING_WAIT_STATE;
       }
       // fail
       else {
@@ -601,25 +600,25 @@ void sensors_reading_task () {
         humidity_samples.error_count++;
         #endif
 
-        sensor_reading_state = END_SENSOR_READING;
+        sensors_reading_state = SENSORS_READING_NEXT;
       }
       break;
 
-    case READ_SENSOR:
+    case SENSORS_READING_READ:
       #if (USE_SENSOR_HYT)
       if (strcmp(sensors[i]->getType(), SENSOR_TYPE_HYT) == 0) {
         humidity_samples.values[humidity_samples.count++] = values_readed_from_sensor[0];
         temperature_samples.values[temperature_samples.count++] = values_readed_from_sensor[1];
       }
       #endif
-      sensor_reading_state = END_SENSOR_READING;
+      sensors_reading_state = SENSORS_READING_NEXT;
       break;
 
-    case END_SENSOR_READING:
+    case SENSORS_READING_NEXT:
       // next sensor
       if ((++i) < sensors_count) {
         retry = 0;
-        sensor_reading_state = PREPARE_SENSOR;
+        sensors_reading_state = SENSORS_READING_PREPARE;
       }
       // end
       else {
@@ -635,28 +634,25 @@ void sensors_reading_task () {
         #if (SERIAL_TRACE_LEVEL >= SERIAL_TRACE_LEVEL_INFO)
         delay_ms = 10;
         start_time_ms = millis();
-        state_after_wait = END_SENSOR;
-        sensor_reading_state = WAIT_SENSOR_STATE;
+        state_after_wait = SENSORS_READING_END;
+        sensors_reading_state = SENSORS_READING_WAIT_STATE;
         #else
-        sensor_reading_state = END_SENSOR;
+        sensors_reading_state = SENSORS_READING_END;
         #endif
       }
       break;
 
-    case END_SENSOR:
+    case SENSORS_READING_END:
       noInterrupts();
       is_event_sensors_reading = false;
       ready_tasks_count--;
       interrupts();
-      sensor_reading_state = END_SENSOR_TASK;
+      sensors_reading_state = SENSORS_READING_INIT;
       break;
 
-    case END_SENSOR_TASK:
-      break;
-
-    case WAIT_SENSOR_STATE:
+    case SENSORS_READING_WAIT_STATE:
       if (millis() - start_time_ms > delay_ms) {
-        sensor_reading_state = state_after_wait;
+        sensors_reading_state = state_after_wait;
       }
       break;
   }
@@ -808,7 +804,6 @@ void commands() {
     reset_buffers();
 
     if (!is_event_sensors_reading) {
-      sensor_reading_state = INIT_SENSOR;
       is_event_sensors_reading = true;
       ready_tasks_count++;
     }

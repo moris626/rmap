@@ -121,17 +121,16 @@ enum {
 } state;
 
 typedef enum {
-  INIT_SENSOR,
-  PREPARE_SENSOR,
-  IS_SENSOR_PREPARED,
-  GET_SENSOR,
-  IS_SENSOR_GETTED,
-  READ_SENSOR,
-  END_SENSOR_READING,
-  END_SENSOR,
-  END_SENSOR_TASK,
-  WAIT_SENSOR_STATE
-} sensor_reading_state_t;
+  SENSORS_READING_INIT,
+  SENSORS_READING_PREPARE,
+  SENSORS_READING_IS_PREPARED,
+  SENSORS_READING_GET,
+  SENSORS_READING_IS_GETTED,
+  SENSORS_READING_READ,
+  SENSORS_READING_NEXT,
+  SENSORS_READING_END,
+  SENSORS_READING_WAIT_STATE
+} sensors_reading_state_t;
 
 /**********************************************************************
  * GLOBAL VARIABLE
@@ -262,7 +261,7 @@ bool is_sensor_hyt_prepared;
 bool is_sensor_hyt_setted;
 #endif
 
-sensor_reading_state_t sensor_reading_state;
+sensors_reading_state_t sensors_reading_state;
 
 /**********************************************************************
  * FUNCTIONS
