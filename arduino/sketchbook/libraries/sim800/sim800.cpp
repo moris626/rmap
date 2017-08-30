@@ -616,8 +616,9 @@ sim800_status_t SIM800::sendCpowd() {
    at_command_status = sendAtCommand("AT+CPOWD=1\r\n", buffer, AT_NORMAL_POWER_DOWN_STRING, NULL, SIM800_AT_DEFAULT_TIMEOUT_MS);
 
    if (at_command_status == SIM800_OK || at_command_status == SIM800_ERROR) {
-      state &= ~SIM800_STATE_INITIALIZED;
-      state &= ~SIM800_STATE_ON;
+      // state &= ~SIM800_STATE_INITIALIZED;
+      // state &= ~SIM800_STATE_ON;
+      state = SIM800_STATE_NONE;
    }
 
    return at_command_status;
@@ -720,8 +721,12 @@ sim800_status_t SIM800::connection(const char *tipo, const char *server, const i
          sim800_status = SIM800_BUSY;
 
          if (isInitialized()) {
+            start_time_ms = millis();
+            delay_ms = 2000;
+            sim800_connection_state = SIM800_CONNECTION_WAIT_STATE;
+            state_after_wait = SIM800_CONNECTION_OPEN;
             snprintf(buffer2, SIM800_BUFFER_LENGTH, "AT+CIPSTART=\"%s\",\"%s\",\"%i\"\r\n", tipo, server, port);
-            sim800_connection_state = SIM800_CONNECTION_OPEN;
+            // sim800_connection_state = SIM800_CONNECTION_OPEN;
          }
          else {
             is_error = true;
