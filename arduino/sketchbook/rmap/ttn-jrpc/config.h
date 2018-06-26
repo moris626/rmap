@@ -1,1 +1,0 @@
-#define CONFVER "ttn00"

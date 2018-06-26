@@ -1,4 +1,4 @@
-#!/usr/bin/python
+#!/bin/python
 # GPL. (C) 2014 Paolo Patruno.
 
 # This program is free software; you can redistribute it and/or modify 
@@ -137,13 +137,14 @@ def maindirecttodballe(self):
     oldtopic2="None"
     oldtopic3="None"
 
-    if self.options.datalevel == "sample":
-        oldtopic1="rmap/#"
-        oldtopic2="sample/+/+/rmap/#"
-        oldtopic3="sample/+/+/arpae/#"
-    elif self.options.datalevel == "report":
-        oldtopic1="fixed/#"
-        oldtopic2="report/+/+/rmap/#"
+    if self.options.stationtype == "fixed":
+        if self.options.datalevel == "sample":
+            oldtopic1="rmap/#"
+            oldtopic2="sample/+/+/rmap/#"
+            oldtopic3="sample/+/+/arpae/#"
+        elif self.options.datalevel == "report":
+            oldtopic1="fixed/#"
+            oldtopic2="report/+/+/rmap/#"
 
     if self.options.stationtype == "mobile":
         oldtopic1="mobile/#"
@@ -318,13 +319,15 @@ def main(self):
     oldtopic2="None"
     oldtopic3="None"
 
-    if self.options.datalevel == "sample":
-        oldtopic1="rmap/#"
-        oldtopic2="sample/+/+/rmap/#"
-        oldtopic3="sample/+/+/arpae/#"
-    elif self.options.datalevel == "report":
-        oldtopic1="fixed/#"
-        oldtopic2="report/+/+/rmap/#"
+
+    if self.options.stationtype == "fixed":
+        if self.options.datalevel == "sample":
+            oldtopic1="rmap/#"
+            oldtopic2="sample/+/+/rmap/#"
+            oldtopic3="sample/+/+/arpae/#"
+        elif self.options.datalevel == "report":
+            oldtopic1="fixed/#"
+            oldtopic2="report/+/+/rmap/#"
 
     if self.options.stationtype == "mobile":
         oldtopic1="mobile/#"
@@ -342,7 +345,8 @@ def main(self):
             nonblockingfile(p1.stderr)
 
             while p1.poll() is None:
-                p2 = subprocess.Popen(["arki-scan", "--inline", "bufr:-"],cwd=self.cwd, stdin=p1.stdout, stdout=subprocess.PIPE,stderr=subprocess.PIPE)
+                #p2 = subprocess.Popen(["arki-scan", "--inline", "bufr:-"],cwd=self.cwd, stdin=p1.stdout, stdout=subprocess.PIPE,stderr=subprocess.PIPE)
+                p2 = subprocess.Popen(["arki-query", "--stdin=bufr","--inline",""],cwd=self.cwd, stdin=p1.stdout, stdout=subprocess.PIPE,stderr=subprocess.PIPE)
                 #p2 = subprocess.Popen(["dbamsg","dump"],cwd=self.cwd, stdin=p1.stdout, stdout=subprocess.PIPE,stderr=subprocess.PIPE)
                 #p1.stdout.close()  # Allow p1 to receive a SIGPIPE if p2 exits. Do not use inside this while loop
 
@@ -377,7 +381,7 @@ def main(self):
                                 line=""
                             if line:
                                 #print 'Got data:', line
-                                logging.error("arki-scan: "+line.rstrip("\n"))
+                                logging.error("arki-query: "+line.rstrip("\n"))
                             else:
                                 break
 

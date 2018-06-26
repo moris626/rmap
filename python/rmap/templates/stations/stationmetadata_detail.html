@@ -60,6 +60,7 @@
 {% for board in object.board_set.all %}
   {% if board.active  %}
     <h3>{% trans 'Board name' %}: {{ board.name }}</h3>
+    <h4>{% trans 'Firmware version' %}: {{ board.boardfirmwaremetadata.swversion }}   {% trans 'Last firmware update' %}: {{ board.boardfirmwaremetadata.swlastupdate }}</h4>
     {% for sensor in board.sensor_set.all %}
       {% if sensor.active  %}
         {% if sensor.type.active and sensor.driver != 'JRPC' %}
@@ -72,7 +73,14 @@
 
   <img src = "/graphite/render/?target=offset(scale({{ object.mqttrootpath }}_{{ object.network }}.{{ object.ident }}.{{ object.lon_lat }}.*.{{ sensor.underscored_timerange }}.{{ sensor.underscored_level}}.{{bcode.bcode}},{{bcode.scale}}),{{bcode.offset}})&hideLegend=true&tz=UTC&width=400&height=250&from=-12hours">
 
-  <p><a class="btn btn-default" href="/graphite/composer/?target=offset(scale({{ object.mqttrootpath }}_{{ object.network }}.{{ object.ident }}.{{ object.lon_lat }}.*.{{ sensor.underscored_timerange }}.{{ sensor.underscored_level}}.{{bcode.bcode}},{{bcode.scale}}),{{bcode.offset}})&from=-12hours" role="button">Graphite composer &raquo;</a></p>
+  <p>
+    
+    <a class="btn btn-default" href=    {% url 'showdata:timeseriesdaily'  object.ident object.lonlat object.network sensor.timerange sensor.level bcode.bcode year month day %}?{% if object.mqttrootpath %}{% if object.network %}dsn={{object.mqttrootpath}}_{{ object.network }}{% endif %}{% endif %} role="button">Timeseries &raquo;</a>
+
+    <a class="btn btn-default" href=    {% url 'showdata:spatialseriesdaily'  object.ident object.lonlat object.network sensor.timerange sensor.level bcode.bcode year month day %}?{% if object.mqttrootpath %}{% if object.network %}dsn={{object.mqttrootpath}}_{{ object.network }}{% endif %}{% endif %} role="button">Spatialseries &raquo;</a>
+
+    <a class="btn btn-default" href="/graphite/composer/?target=offset(scale({{ object.mqttrootpath }}_{{ object.network }}.{{ object.ident }}.{{ object.lon_lat }}.*.{{ sensor.underscored_timerange }}.{{ sensor.underscored_level}}.{{bcode.bcode}},{{bcode.scale}}),{{bcode.offset}})&from=-12hours" role="button">Graphite composer &raquo;</a>
+  </p>
 </div>
 
           {% endfor %}
@@ -88,7 +96,8 @@
   <script>
     $('#preloadimages img').preload({
           placeholder:'{% static "rmap/loading.gif" %}',
-          notFound:'{% static "rmap/access-error-logs.png" %}'
+          notFound:'{% static "rmap/access-error-logs.png" %}',
+          threshold:1
     });
   </script>
 

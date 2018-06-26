@@ -21,9 +21,10 @@
 
  <link rel="stylesheet" type="text/css" href="{% static "showdata/LeafletStyleSheet.css" %}" >
 
+<!--
  <script type="text/javascript" src="{% static "showdata/leaflet.label.js" %}" ></script>
  <link rel="stylesheet" type="text/css" href="{% static "showdata/leaflet.label.css" %}" >
-
+-->
 <!--
  <script type="text/javascript" src="{% static "showdata/leaflet.markercluster.js" %}" ></script>
  <link rel="stylesheet" type="text/css" href="{% static "showdata/MarkerCluster.css" %}" >
@@ -32,7 +33,7 @@
 
 <style>
 
-.ui-dialog,.ui-dialog-content {background:green}
+.ui-dialog,.ui-dialog-content {background:green; z-index: 1000;}
 
 .myDivIcon {
     /*opacity: .9; */border: 1px solid #000;
@@ -53,9 +54,11 @@
 }
 
 
+<!--
 .leaflet-label {
     background: rgba(235, 235, 235, 0.95);
     z-index: 10000 !important;
+-->
 }
 
 
@@ -67,7 +70,8 @@
   jQuery(function( $ ){
        $('#preloadimages img').preload({
             placeholder:'{% static "showdata/loading.gif" %}',
-            notFound:'{% static "showdata/access-error-logs.png" %}'
+            notFound:'{% static "showdata/access-error-logs.png" %}',
+            threshold:2
        })
   });
 </script>
@@ -450,7 +454,7 @@ function map_init(map, options)
 			})
 		    );
 
-		    leafletMarker.bindLabel(data.feature.properties.date);
+		    leafletMarker.bindTooltip(data.feature.properties.date);
 		    
 		    /*
 		    var popup = L.popup()
@@ -561,17 +565,22 @@ function map_init(map, options)
 
 
   <div class="row">
-    <div class="col-xs-8">
+    <div class="col-xs-4">
       <p style="text-align:left">
 	<a href='
-	   {% url 'showdata:stations' ident coords network trange level var %}?{% if dsn %}dsn={{dsn}}{% endif %}{% for key, value in spatialbox.items %}&{{key}}={{value}}{% endfor %}{% for key, value in timebox.items %}&{{key}}={{value}}{% endfor %}
-	   '>{% trans "Show all coordinates on a map" %}
+	   {% if hour %}
+	     {% url 'showdata:spatialserieshourly' ident '*' network trange level var year month day hour %}?{% if dsn %}dsn={{dsn}}{% endif %}{% for key, value in spatialbox.items %}&{{key}}={{value}}{% endfor %}{% for key, value in timebox.items %}&{{key}}={{value}}{% endfor %}
+	   {% elif day %}
+	     {% url 'showdata:spatialseriesdaily' ident '*' network trange level var year month day %}?{% if dsn %}dsn={{dsn}}{% endif %}{% for key, value in spatialbox.items %}&{{key}}={{value}}{% endfor %}{% for key, value in timebox.items %}&{{key}}={{value}}{% endfor %}
+	   {% endif %}
+	   '>{% trans "Show all stations on a map" %}
 	</a>
       </p>
     </div>
 
-{% if dsn == 'sample' or dsn == 'report' %}
-    <div class="col-xs-4">
+    
+    {% if dsn == 'sample' or dsn == 'report' %}
+    <div class="col-xs-4 col-xs-offset-4">
       <p style="text-align:left">
 	<a href='
 	   {% if hour %}
@@ -583,11 +592,21 @@ function map_init(map, options)
 	</a>
       </p>
     </div>
+  {% endif %}
   </div>
-{% endif %}
-  
+
+    
   <div class="row">
-    <div class="col-xs-4 col-xs-offset-8">
+    <div class="col-xs-4">
+      <p style="text-align:left">
+	<a href='
+	   {% url 'showdata:stations' ident coords network trange level var %}?{% if dsn %}dsn={{dsn}}{% endif %}{% for key, value in spatialbox.items %}&{{key}}={{value}}{% endfor %}{% for key, value in timebox.items %}&{{key}}={{value}}{% endfor %}
+	   '>{% trans "Show all coordinates on a map" %}
+	</a>
+      </p>
+    </div>
+    
+    <div class="col-xs-4 col-xs-offset-4">
       <p style="text-align:left">
 
 	<a href='

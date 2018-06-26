@@ -6,8 +6,10 @@ import os
 import hashlib
 import json
 import dateutil.parser
-
-file_full_path="/dati/pat1/eeepc/pat1/Dropbox/Photos/smr/img001.jpg"
+from rmap.stations.models import Board,BoardFirmwareMetadata
+import django.utils.timezone
+from django.contrib.auth.hashers import check_password, make_password
+import traceback
 
 def md5(fname):
     hash_md5 = hashlib.md5()
@@ -23,10 +25,11 @@ In the firmware it's possible to point update function to a script at the server
 If version string argument is given, it will be sent to the server. Server side script can use this to check if update should be performed.<br>
 Server side script can respond as follows:<br>
 - response code 200, and send the firmware image,<br>
-- or response code 304 to notify ESP that no update is required.<br>
+- or response code 304 to notify the module that no update is required.<br>
 <br>
 Add to this url path the name of the firmware you want to update with the last version.<br>
-The version on the ESP have to be set to the date in standard iso format.
+The version on the module have to be set to the date in standard iso format.<br>
+If you change the hardware in the module you need to recreate the station on the server becouse the MAC of the board is saved on server side.
     '''
     return HttpResponse(howto)
 
@@ -67,26 +70,58 @@ def update(request,name):
 
     try:
         #check date (version)
-        espversion=json.loads(request.META.get('HTTP_X_ESP8266_VERSION'))
-        espdate = dateutil.parser.parse(espversion["ver"])
+        swversion=json.loads(request.META.get('HTTP_X_ESP8266_VERSION'))
+        swdate = dateutil.parser.parse(swversion["ver"])
     except:
         print ' 300 No valid version!'
         return HttpResponse(' 300 No valid version!',status=300)
 
     try:
-        print "user: ",espversion["user"]
+        print "user: ",swversion["user"]
     except:
         print "no user in version"
     try:
-        print "slug: ",espversion["slug"]
+        print "slug: ",swversion["slug"]
     except:
         print "no slug in version"
-        
-    if espdate >= firmware.date:
+
+    try:
+        print "boardslug: ",swversion["bslug"]
+    except:
+        print "no board slug in version; set default"
+        swversion["bslug"]="default"
+
+    try:
+        myboard = Board.objects.get(slug=swversion["bslug"]
+                                    ,stationmetadata__slug=swversion["slug"]
+                                    ,stationmetadata__ident__username=swversion["user"])
+
+        if hasattr(myboard, 'boardfirmwaremetadata'):
+            if not myboard.boardfirmwaremetadata.mac:
+                print "update missed mac in firmware updater"
+                myboard.boardfirmwaremetadata.mac=make_password(sta_mac)
+                myboard.boardfirmwaremetadata.save(update_fields=['mac',])
+        else:
+            print "add firmware metadata to board"
+            bfm=BoardFirmwareMetadata(board=myboard,mac=make_password(sta_mac))
+            myboard.boardfirmwaremetadata=bfm
+            myboard.save()
+        if check_password(sta_mac, myboard.boardfirmwaremetadata.mac):
+            print "update firmware metadata"
+            myboard.boardfirmwaremetadata.swversion=swversion["ver"]
+            myboard.boardfirmwaremetadata.swlastupdate=django.utils.timezone.now()            
+            myboard.boardfirmwaremetadata.save()
+        else:
+            print "WARNING! mac mismach in firmware updater"
+            
+    except:
+        print "user/station/board not present on DB; ignore it"
+        traceback.print_exc()
+
+    if swdate >= firmware.date.replace(tzinfo=None):
         print ' 304 No new firmware'
         return HttpResponse(' 304 No new firmware',status=304)
-
-
+    
     mymd5=md5(firmware.file.path)
     mysize=os.path.getsize(firmware.file.path)
 

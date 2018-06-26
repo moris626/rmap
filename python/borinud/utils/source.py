@@ -22,6 +22,7 @@ import math
 import dballe
 import json
 from datetime import datetime
+import tempfile
 
 try:
     from urllib import quote
@@ -30,16 +31,16 @@ except ImportError:
     from urllib.request import urlopen
     from urllib.parse import quote
 
-from ..settings import BORINUD
+from ..settings import BORINUD,BORINUDLAST
 
 
-def get_db(dsn="report"):
+def get_db(dsn="report",last=True):
     from django.utils.module_loading import import_string
     dbs = [
         import_string(i["class"])(**{
             k: v for k, v in i.items() if k != "class"
         })
-        for i in BORINUD[dsn]["SOURCES"]
+        for i in (BORINUDLAST[dsn]["SOURCES"] if last else BORINUD[dsn]["SOURCES"])
     ]
     if len(dbs) == 1:
         db = dbs[0]
@@ -140,7 +141,6 @@ class DballeDB(DB):
 
     def query_stations(self, rec):
         db = self.__open_db()
-        rec.set_station_context()
         return db.query_station_data(rec)
 
     def query_summary(self, rec):
@@ -500,7 +500,12 @@ class ArkimetBufrDB(DB):
 
         fo=self.get_datastream(rec)
         memdb = dballe.DB.connect_from_url("mem:")
-        memdb.load(fo, "BUFR")
+
+        with tempfile.SpooledTemporaryFile(max_size=10000000) as tmpf:
+            tmpf.write(fo.read())
+            tmpf.seek(0)
+            memdb.load(tmpf, "BUFR")
+
         for r in memdb.query_data(rec):
             del r["ana_id"]
             del r["data_id"]
@@ -510,8 +515,10 @@ class ArkimetBufrDB(DB):
     def fill_db(self, rec,memdb):
 
         fo=self.get_datastream(rec)
-        memdb.load(fo, "BUFR")
-
+        with tempfile.SpooledTemporaryFile(max_size=10000000) as tmpf:
+            tmpf.write(fo.read())
+            tmpf.seek(0)
+            memdb.load(tmpf, "BUFR")
 
     def load_arkiquery_to_dbadb(self, rec, db):
         query = self.record_to_arkiquery(rec)

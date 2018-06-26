@@ -19,18 +19,19 @@
 
  <link rel="stylesheet" type="text/css" href="{% static "showdata/LeafletStyleSheet.css" %}" >
 
+ <!--
  <script type="text/javascript" src="{% static "showdata/leaflet.label.js" %}" ></script>
  <link rel="stylesheet" type="text/css" href="{% static "showdata/leaflet.label.css" %}" >
-
-<!--
+ -->
+ <!--
  <script type="text/javascript" src="{% static "showdata/leaflet.markercluster.js" %}" ></script>
  <link rel="stylesheet" type="text/css" href="{% static "showdata/MarkerCluster.css" %}" >
  <link rel="stylesheet" type="text/css" href="{% static "showdata/MarkerCluster.Default.css" %}" >
--->
+ -->
 
 <style>
 
-.ui-dialog,.ui-dialog-content {background:green}
+.ui-dialog,.ui-dialog-content {background:green; z-index: 1000;}
 
 .myDivIcon {
     /*opacity: .9; */border: 1px solid #000;
@@ -50,12 +51,12 @@
     line-height: 14px;
 }
 
-
+<!--
 .leaflet-label {
     background: rgba(235, 235, 235, 0.95);
     z-index: 10000 !important;
 }
-
+-->
 
 </style>
 
@@ -219,7 +220,7 @@ function map_init(map, options)
 		    );
 
 		    var b = borinud.config.B[data.feature.properties.var];
-		    leafletMarker.bindLabel(b.description + " (" + b.unit + ")");
+		    leafletMarker.bindTooltip(b.description + " (" + b.unit + ")");
 		    
 		}
 		

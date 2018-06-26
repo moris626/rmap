@@ -12,6 +12,7 @@ from django.core.urlresolvers import reverse
 from  rmap.tables import Table,TableEntry
 import os
 from django.utils.translation import ugettext as _
+from django.utils.translation import ugettext_lazy as __
 from django.core.files import File
 from tempfile import NamedTemporaryFile
 from django.core.files.base import ContentFile
@@ -82,7 +83,7 @@ class StationForm(forms.Form):
     def __init__(self, username, *args, **kwargs):
 
         super(StationForm, self).__init__(*args, **kwargs)
-        self.fields['station_slug'] = forms.ChoiceField(scelta_stations(username),required=False,label=_('Your station'),help_text=_('Select configurated station'),initial="")
+        self.fields['station_slug'] = forms.ChoiceField(scelta_stations(username),required=False,label=__('Your station'),help_text=__('Select configurated station'),initial="")
 
 
 class ManualForm(forms.ModelForm):
@@ -90,10 +91,10 @@ class ManualForm(forms.ModelForm):
     #geom = PointField()
 
     coordinate_slug= forms.CharField(widget=forms.HiddenInput(),required=False)
-    presentweather=forms.ChoiceField(scelta_present_weather(),required=False,label=_('Present weather'),help_text=_('Present weather'),initial="")
+    presentweather=forms.ChoiceField(scelta_present_weather(),required=False,label=__('Present weather'),help_text=__('Present weather'),initial="")
 
-    visibility=forms.IntegerField(required=False,label=_("Visibility(m.)"),help_text='',min_value=0,max_value=1000000)
-    snow_height=forms.IntegerField(required=False,label=_("Snow height(cm.)"),help_text='',min_value=0,max_value=1000)
+    visibility=forms.IntegerField(required=False,label=__("Visibility(m.)"),help_text='',min_value=0,max_value=1000000)
+    snow_height=forms.IntegerField(required=False,label=__("Snow height(cm.)"),help_text='',min_value=0,max_value=1000)
 
     class Meta:
         model = GeorefencedImage
@@ -104,12 +105,12 @@ class ManualForm(forms.ModelForm):
 class RainboWeatherForm(forms.ModelForm):
     coordinate_slug= forms.CharField(widget=forms.HiddenInput(),required=False)
     #fixed standard values from ~/rmap/python/rmap/tables/present_weather.txt  
-    not_significant = forms.ChoiceField(widget=forms.RadioSelect(),choices=[(100,_("not significant"))],required=False,label=_("Not_significant"),help_text='')
-    visibility_intensity=forms.ChoiceField(widget=forms.RadioSelect(),choices=[(110,_("haze")),(130,_("fog"))],required=False,label=_("Visibility"),help_text='')
-    snow_intensity=forms.ChoiceField(widget=forms.RadioSelect(),choices=[(185,_("weak")),(186,_("moderate")),(187,_("intense"))],required=False,label=_("Snow"),help_text='')    
-    thunderstorm_intensity=forms.ChoiceField(widget=forms.RadioSelect(),choices=[(192,_("moderate with rain")),(193,_("moderate with hail")),(195,_("intense with rain")),(196,_("intense with hail"))],required=False,label=_("Thunderstorm"),help_text='') 
-    rain_intensity=forms.ChoiceField(widget=forms.RadioSelect(),choices=[(150,_("drizzle")),(160,_("rain")),(165,_("freezing on the ground")),(184,'very heavy')],required=False,label=_("Rain"),help_text='')
-    tornado=forms.ChoiceField(widget=forms.RadioSelect(),choices=[(199,_("tornado"))],required=False,label=_("Tornado"),help_text='')
+    not_significant = forms.ChoiceField(widget=forms.RadioSelect(),choices=[(100,__("not significant"))],required=False,label=__("Not_significant"),help_text='')
+    visibility_intensity=forms.ChoiceField(widget=forms.RadioSelect(),choices=[(110,__("haze")),(130,__("fog"))],required=False,label=__("Visibility"),help_text='')
+    snow_intensity=forms.ChoiceField(widget=forms.RadioSelect(),choices=[(185,__("weak")),(186,__("moderate")),(187,__("intense"))],required=False,label=__("Snow"),help_text='')    
+    thunderstorm_intensity=forms.ChoiceField(widget=forms.RadioSelect(),choices=[(192,__("moderate with rain")),(193,__("moderate with hail")),(195,__("intense with rain")),(196,__("intense with hail"))],required=False,label=__("Thunderstorm"),help_text='') 
+    rain_intensity=forms.ChoiceField(widget=forms.RadioSelect(),choices=[(150,__("drizzle")),(160,__("rain")),(165,__("freezing on the ground")),(184,'very heavy')],required=False,label=__("Rain"),help_text='')
+    tornado=forms.ChoiceField(widget=forms.RadioSelect(),choices=[(199,__("tornado"))],required=False,label=__("Tornado"),help_text='')
 
     class Meta:
         model = GeorefencedImage
@@ -119,7 +120,7 @@ class RainboWeatherForm(forms.ModelForm):
 
 class RainboImpactForm(forms.ModelForm):
     coordinate_slug= forms.CharField(widget=forms.HiddenInput(),required=False)
-    impact_detected=forms.ChoiceField(widget=forms.RadioSelect(),choices=[(10,_("fallen tree")),(20,_("icy road")),(30,_("flooding")),(40,_("pothole"))],required=False,label=_("Impact detected"),help_text='') 
+    impact_detected=forms.ChoiceField(widget=forms.RadioSelect(),choices=[(10,__("fallen tree")),(20,__("icy road")),(30,__("flooding")),(40,__("pothole"))],required=False,label=__("Impact detected"),help_text='') 
 
     class Meta:
         model = GeorefencedImage
@@ -128,7 +129,7 @@ class RainboImpactForm(forms.ModelForm):
 
 
 class NominatimForm(forms.Form):
-    address= forms.CharField(required=False,label=_("Search address"),help_text='')
+    address= forms.CharField(required=False,label=__("Search address"),help_text='')
 
 
 
@@ -141,8 +142,8 @@ class NewStationForm(forms.ModelForm):
         CHOICES.append((tem,tem))
     
     coordinate_slug= forms.CharField(widget=forms.HiddenInput(),required=False)
-    name= forms.CharField(required=True,label=_("New station name"),help_text=_('The name of the station to insert'))
-    template=forms.ChoiceField(choices=CHOICES,required=True,label=_("station model"),help_text=_('The model of the station to insert'),initial="none")
+    name= forms.CharField(required=True,label=__("New station name"),help_text=__('The name of the station to insert'))
+    template=forms.ChoiceField(choices=CHOICES,required=True,label=__("station model"),help_text=__('The model of the station to insert'),initial="none")
     
     class Meta:
         model = GeorefencedImage
@@ -167,7 +168,10 @@ def insertDataImage(request):
                 station=StationMetadata.objects.get(ident__username=request.user.username,slug=slug)
                 #stationlat=station.lat
                 #stationlon=station.lon
-                request.POST['geom']= str(Point(station.lon,station.lat))
+                POST=request.POST.copy()
+                POST['geom']= str(Point(station.lon,station.lat))
+                stationform = StationForm(request.user.get_username(),POST, request.FILES) # A form bound to the new data
+                form = ImageForm(POST, request.FILES) # A form bound to the new data
                 return render(request, 'insertdata/form.html',{'form': form,'stationform':stationform,'nominatimform':nominatimform})
         else:
             stationform = StationForm(request.user.get_username())
@@ -183,8 +187,12 @@ def insertDataImage(request):
                     lat= result[0]["lat"]
                     lon= result[0]["lon"]
                     address= result[0]["display_name"]
-                    request.POST['geom']= str(Point(float(lon),float(lat)))
-                    request.POST['address']= address
+                    POST=request.POST.copy()
+                    POST['geom']= str(Point(float(lon),float(lat)))
+                    POST['address']= address
+                    stationform = StationForm(request.user.get_username(),POST, request.FILES) # A form bound to the new data
+                    nominatimform = NominatimForm(POST) # A form bound to the new data
+                    form = ImageForm(POST, request.FILES) # A form bound to the new data
                 return render(request, 'insertdata/form.html',{'form': form,'stationform':stationform,'nominatimform':nominatimform})
         else:
             nominatimform = NominatimForm()
@@ -351,8 +359,7 @@ def insertDataRainboWeatherData(request):
                     slug=form.cleaned_data['coordinate_slug']
                     print user,password,network,prefix
                     print "<",slug,">","prefix:",prefix
-                    mqtt=rmapmqtt(ident=ident,lon=lon,lat=lat,network=network,host="rmap.cc",port=1883,prefix=prefix,maintprefix=prefix,username=user,password=password)
-                    #mqtt=rmapmqtt(ident=ident,lon=lon,lat=lat,network=network,host="localhost",port=1883,prefix=prefix,maintprefix=prefix,username=user,password=password)
+                    mqtt=rmapmqtt(ident=ident,lon=lon,lat=lat,network=network,host="localhost",port=1883,prefix=prefix,maintprefix=prefix,username=user,password=password)
                     mqtt.data(timerange="254,0,0",level="1,-,-,-",datavar=datavar)
                     mqtt.disconnect()
                     form = RainboWeatherForm() # An unbound Rainbo form
@@ -388,9 +395,11 @@ def insertDataManualData(request):
                 station=StationMetadata.objects.get(ident__username=request.user.username,slug=slug)
                 #stationlat=station.lat
                 #stationlon=station.lon
-
-                request.POST['geom']= str(Point(station.lon,station.lat))
-                request.POST['coordinate_slug']= slug
+                POST=request.POST.copy()
+                POST['geom']= str(Point(station.lon,station.lat))
+                POST['coordinate_slug']= slug
+                stationform = StationForm(request.user.get_username(),POST) # A form bound to the new data
+                form = ManualForm(POST) # A form bound to the new data
                 return render(request, 'insertdata/manualdataform.html',{'form': form,'stationform':stationform,'nominatimform':nominatimform})
         else:
             stationform = StationForm(request.user.get_username())
@@ -402,12 +411,17 @@ def insertDataManualData(request):
             if address:
                 nom = Nominatim(base_url="http://nominatim.openstreetmap.org",referer=get_current_site(request))
                 result=nom.query(address,limit=1,countrycodes="IT")
-                if len(result) >= 1:
-                    lat= result[0]["lat"]
-                    lon= result[0]["lon"]
-                    address= result[0]["display_name"]
-                    request.POST['geom']= str(Point(float(lon),float(lat)))
-                    request.POST['address']= address
+                if result is not None:
+                    if len(result) >= 1:
+                        lat= result[0]["lat"]
+                        lon= result[0]["lon"]
+                        address= result[0]["display_name"]
+                        POST=request.POST.copy()
+                        POST['geom']= str(Point(float(lon),float(lat)))
+                        POST['address']= address
+                        nominatimform = NominatimForm(POST) # A form bound to the new data
+                        stationform = StationForm(request.user.get_username(),POST) # A form bound to the new data
+                        form = ManualForm(POST) # A form bound to the new data
                 return render(request, 'insertdata/manualdataform.html',{'form': form,'stationform':stationform,'nominatimform':nominatimform})
         else:
             nominatimform = NominatimForm()
@@ -502,8 +516,12 @@ def insertNewStation(request):
                     lat= result[0]["lat"]
                     lon= result[0]["lon"]
                     address= result[0]["display_name"]
-                    request.POST['geom']= str(Point(float(lon),float(lat)))
-                    request.POST['address']= address
+                    POST=request.POST.copy()
+                    POST['geom']= str(Point(float(lon),float(lat)))
+                    POST['address']= address
+                    newstationform = NewStationForm(POST) # A form bound to the new data
+                    nominatimform = NominatimForm(POST) # A form bound to the new data
+
                 return render(request, 'insertdata/newstationform.html',{'nominatimform':nominatimform,'newstationform':newstationform})
         else:
             nominatimform = NominatimForm()
