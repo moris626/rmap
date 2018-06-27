@@ -324,11 +324,11 @@ def addsensor(station_slug=None,username=None,board_slug=None,name="my sensor",d
 
 ttntemplate=[]
 ttntemplate.append(collections.OrderedDict())  # null template 0
-ttntemplate.append(collections.OrderedDict())  # template 1: temperature and himidity
+ttntemplate.append(collections.OrderedDict())  # template 1: temperature and humidity
 ttntemplate[1]["B12101"]={"nbit":16,"offset":22315,"scale":100,"timerange":"254,0,0","level":"103,2000,-,-"}
 ttntemplate[1]["B13003"]={"nbit":7,"offset":0,"scale":1,"timerange":"254,0,0","level":"103,2000,-,-"}
 
-ttntemplate.append(collections.OrderedDict())  # template 2: temperature and himidity
+ttntemplate.append(collections.OrderedDict())  # template 2: temperature and humidity
 ttntemplate[2]["B12101"]={"nbit":16,"offset":22315,"scale":100,"timerange":"254,0,0","level":"103,2000,-,-"}
 ttntemplate[2]["B13003"]={"nbit":7,"offset":0,"scale":1,"timerange":"254,0,0","level":"103,2000,-,-"}
 ttntemplate[2]["B15198"]={"nbit":20,"offset":0,"scale":10000000000,"timerange":"254,0,0","level":"103,2000,-,-"}
@@ -971,7 +971,7 @@ def configstation(transport_name="serial",station_slug=None,board_slug=None,logf
 
                         print "mybaudrate:",mybaudrate
 
-                        transport=jsonrpc.TransportSERIAL( logfunc=logfunc,port=mydevice,baudrate=mybaudrate,timeout=5)
+                        transport=jsonrpc.TransportSERIAL( logfunc=logfunc,port=mydevice,baudrate=mybaudrate,timeout=5,sleep=5)
                         
                 except ObjectDoesNotExist:
                     print "transport serial not present for this board"
@@ -1472,4 +1472,75 @@ def configdb(username="rmap",password="rmap",
 
 
         # TODO Serial TCPIP
+
+def compact(myrpc,mydata):
+    def bin(s):
+        return str(s) if s<=1 else bin(s>>1) + str(s&1)
+
+    def bitprepend(template,bit,nbit):
+        return (template<<nbit) | bit
+
+    def bitextract(template,start,nbit):
+        return (template>>start)&((1 << nbit) - 1)
+
+    def bit2bytelist(template,totbit):
+        data=[]
+        start=totbit-8
+        while start >= 0:
+            data.append(bitextract(template,start,8))
+            start-=8
+        if start >=-7:
+            data.append(bitextract(template,0,8+start)<< -start )
+        return data
+
+    # start encoding
+    template=0
+    totbit=0
+    #set data template number
+    nbit=8
+    template=bitprepend(template,myrpc,nbit)
+    totbit+=nbit
+
+    #insert data
+    if (myrpc == 1):
+    
+        nbit=1
+        template=bitprepend(template,int(mydata["save"]),nbit)
+        totbit+=nbit
+        
+        nbit=16
+        template=bitprepend(template,mydata["sampletime"],nbit)
+        totbit+=nbit
+
+    elif (myrpc == 2):
+
+        #[{"n":0,"s":True},{"n":3,"s":False}]
+        for pin in mydata:
+            nbit=4
+            template=bitprepend(template,pin["n"],nbit)
+            totbit+=nbit
+        
+            nbit=1
+            template=bitprepend(template,pin["s"],nbit)
+            totbit+=nbit
+
+        
+    print "totbit: ",totbit
+    print bin(template)
+
+    #create a list of bytes
+    data=bit2bytelist(template,totbit)
+    
+    binstring=""
+    for byte in data:
+        binstring+=chr(byte)
+
+    
+    ##convert endian
+    #for i in xrange(0,len(data),2):
+    #    tmp=data[i]
+    #    data[i]=data[i+1]
+    #    data[i+1]=tmp
+        
+    return binstring
 
